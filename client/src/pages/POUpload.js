@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -7,13 +7,41 @@ const POUpload = () => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
   const [success, setSuccess] = useState(false);
   const [extractedData, setExtractedData] = useState(null);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editedData, setEditedData] = useState(null);
+  const [showManualForm, setShowManualForm] = useState(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
+  const [shopSettings, setShopSettings] = useState(null);
+  
+  // Initial data structure for manual job creation
+  const initialJobData = {
+    poNumber: '',
+    customer: '',
+    dueDate: '',
+    part_number: '',
+    revision: '',
+    quantity: 1,
+    machine: '4th Axis Mill',
+    pdf_path: ''
+  };
+  
+  useEffect(() => {
+    // Fetch shop settings when component mounts
+    const fetchSettings = async () => {
+      try {
+        const response = await axios.get('/api/shop-settings');
+        setShopSettings(response.data);
+      } catch (err) {
+        console.error('Error fetching shop settings:', err);
+      }
+    };
+    fetchSettings();
+  }, []);
   
   const onDrop = useCallback(acceptedFiles => {
     // Only accept PDF files
@@ -22,11 +50,13 @@ const POUpload = () => {
     if (pdfFile) {
       setFile(pdfFile);
       setError(null);
+      setShowErrorPopup(false);
       // Create a URL for PDF preview
       const fileUrl = URL.createObjectURL(pdfFile);
       setPdfUrl(fileUrl);
     } else {
       setError('Please upload a PDF file');
+      setShowErrorPopup(true);
     }
   }, []);
   
@@ -43,11 +73,13 @@ const POUpload = () => {
     if (selectedFile && selectedFile.type === 'application/pdf') {
       setFile(selectedFile);
       setError(null);
+      setShowErrorPopup(false);
       // Create a URL for PDF preview
       const fileUrl = URL.createObjectURL(selectedFile);
       setPdfUrl(fileUrl);
     } else if (selectedFile) {
       setError('Please upload a PDF file');
+      setShowErrorPopup(true);
     }
   };
   
@@ -58,11 +90,13 @@ const POUpload = () => {
   const handleProcessPDF = async () => {
     if (!file) {
       setError('Please select a file to upload');
+      setShowErrorPopup(true);
       return;
     }
     
     setUploading(true);
     setError(null);
+    setShowErrorPopup(false);
     
     try {
       const formData = new FormData();
@@ -100,6 +134,7 @@ const POUpload = () => {
       setUploading(false);
       console.error('Upload error:', err);
       setError(err.response?.data?.error || 'Failed to upload PO');
+      setShowErrorPopup(true);
     }
   };
   
@@ -146,44 +181,53 @@ const POUpload = () => {
       setUploading(false);
       console.error('Save error:', err);
       setError(err.response?.data?.error || 'Failed to save PO data');
+      setShowErrorPopup(true);
     }
   };
   
+  // Function to toggle manual form display
+  const toggleManualForm = () => {
+    setShowManualForm(true);
+    setSuccess(false);
+    setEditMode(true);
+    setEditedData(initialJobData);
+  };
+
+  // Handle closing the error popup
+  const handleDismissError = () => {
+    setShowErrorPopup(false);
+  };
+  
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">UPLOAD NEW MISSION</h1>
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold mb-6">UPLOAD PURCHASE ORDER</h1>
       
-      {!success ? (
-        <div className="card">
-          <div className="mb-6">
-            <div 
-              {...getRootProps()} 
-              className={`border-2 border-dashed rounded-md p-8 text-center cursor-pointer transition-colors ${
-                isDragActive ? 'border-orange-500 bg-gray-900' : 'border-gray-600 hover:border-orange-400'
-              }`}
-            >
-              <input {...getInputProps()} />
-              
-              <div className="flex flex-col items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-orange-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                
-                {file ? (
-                  <div>
-                    <p className="text-sm font-medium text-orange-400 font-mono">SELECTED FILE:</p>
-                    <p className="text-sm">{file.name} ({(file.size / 1024).toFixed(2)} KB)</p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-sm font-medium text-orange-400 font-mono">DRAG AND DROP MISSION DOCUMENT</p>
-                    <p className="text-xs mt-1 font-mono">PDF FILES ONLY</p>
+      {!success && !showManualForm ? (
+        <div className="bg-gray-900 border border-gray-700 p-6 rounded-lg shadow-lg">
+          <div {...getRootProps({ className: 'dropzone border-2 border-dashed border-gray-600 rounded-lg p-6 cursor-pointer hover:border-orange-500 transition-colors' })}>
+            <input {...getInputProps()} />
+            {file ? (
+              <div className="text-center">
+                <p className="font-mono">File selected: {file.name}</p>
+                {pdfUrl && (
+                  <div className="mt-4 max-h-96 overflow-auto border border-gray-700 rounded">
+                    <iframe 
+                      src={pdfUrl} 
+                      title="PDF Preview" 
+                      className="w-full h-96"
+                    ></iframe>
                   </div>
                 )}
               </div>
-            </div>
+            ) : isDragActive ? (
+              <p className="text-center text-lg">Drop the PDF file here...</p>
+            ) : (
+              <div className="text-center">
+                <p className="text-lg mb-2">Drag & drop a purchase order PDF, or click to select</p>
+                <p className="text-sm text-gray-400">Only PDF files are accepted</p>
+              </div>
+            )}
             
-            {/* File Explorer Button */}
             <div className="mt-4 flex justify-center">
               <button 
                 type="button"
@@ -201,12 +245,6 @@ const POUpload = () => {
               />
             </div>
           </div>
-          
-          {error && (
-            <div className="bg-red-900 border border-red-700 text-red-100 px-4 py-3 rounded mb-4 font-mono" role="alert">
-              <p>ERROR: {error}</p>
-            </div>
-          )}
           
           <div className="flex justify-end">
             <button 
@@ -231,29 +269,15 @@ const POUpload = () => {
           </div>
         </div>
       ) : (
-        // Show PDF preview and extracted data side by side
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mx-auto" style={{ maxWidth: '98%' }}>
-          {/* PDF Preview - Takes up 2/3 of the screen width */}
-          <div className="card lg:col-span-2">
-            <h2 className="text-xl font-bold mb-4 text-orange-400 font-mono">PDF PREVIEW</h2>
-            <div className="border border-gray-600 rounded-md overflow-hidden" style={{ height: '900px' }}>
-              {pdfUrl && (
-                <iframe 
-                  src={pdfUrl} 
-                  className="w-full h-full"
-                  title="PO PDF Preview"
-                />
-              )}
-            </div>
-          </div>
+        // Edit extracted data form or Manual Entry Form
+        <div className="bg-gray-900 border border-gray-700 p-6 rounded-lg shadow-lg">
+          <h2 className="text-xl font-bold mb-4 text-orange-500">
+            {showManualForm ? 'ENTER PO DETAILS MANUALLY' : 'REVIEW EXTRACTED DATA'}
+          </h2>
           
-          {/* Extracted Data with Edit Form - Takes up 1/3 of the screen width */}
-          <div className="card">
-            <h2 className="text-xl font-bold mb-2 text-orange-400 font-mono">EXTRACTED DATA</h2>
-            <p className="text-sm mb-3 font-mono">VERIFY AND EDIT IF NEEDED</p>
-            
-            {editedData && (
-              <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {(editMode || showManualForm) && editedData && (
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="form-control">
                   <label className="label py-1">
                     <span className="label-text text-orange-400 font-mono">PO NUMBER</span>
@@ -275,6 +299,19 @@ const POUpload = () => {
                     type="text" 
                     name="customer"
                     value={editedData.customer} 
+                    onChange={handleInputChange}
+                    className="input w-full bg-black border-orange-500 text-white font-mono" 
+                  />
+                </div>
+                
+                <div className="form-control">
+                  <label className="label py-1">
+                    <span className="label-text text-orange-400 font-mono">DUE DATE</span>
+                  </label>
+                  <input 
+                    type="date" 
+                    name="dueDate"
+                    value={editedData.dueDate} 
                     onChange={handleInputChange}
                     className="input w-full bg-black border-orange-500 text-white font-mono" 
                   />
@@ -308,19 +345,6 @@ const POUpload = () => {
                 
                 <div className="form-control">
                   <label className="label py-1">
-                    <span className="label-text text-orange-400 font-mono">DUE DATE</span>
-                  </label>
-                  <input 
-                    type="text" 
-                    name="dueDate"
-                    value={editedData.dueDate} 
-                    onChange={handleInputChange}
-                    className="input w-full bg-black border-orange-500 text-white font-mono" 
-                  />
-                </div>
-                
-                <div className="form-control">
-                  <label className="label py-1">
                     <span className="label-text text-orange-400 font-mono">QUANTITY</span>
                   </label>
                   <input 
@@ -329,6 +353,7 @@ const POUpload = () => {
                     value={editedData.quantity} 
                     onChange={handleInputChange}
                     className="input w-full bg-black border-orange-500 text-white font-mono" 
+                    min="1"
                   />
                 </div>
                 
@@ -342,30 +367,19 @@ const POUpload = () => {
                     onChange={handleInputChange}
                     className="select w-full bg-black border-orange-500 text-white font-mono" 
                   >
-                    <option value="4th Axis Mill">4th Axis Mill</option>
-                    <option value="3 Axis Mill">3 Axis Mill</option>
-                    <option value="Lathe">Lathe</option>
-                    <option value="Outside Vendor">Outside Vendor</option>
+                    <option value="">Not Assigned</option>
+                    {shopSettings?.machineTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
                   </select>
                 </div>
               </div>
             )}
             
-            {error && (
-              <div className="bg-red-900 border border-red-700 text-red-100 px-4 py-3 rounded my-4 font-mono" role="alert">
-                <p>ERROR: {error}</p>
-              </div>
-            )}
-            
-            <div className="flex justify-end mt-6">
+            <div className="flex justify-end md:col-span-2 mt-6 gap-4">
               <button 
-                onClick={() => {
-                  setSuccess(false);
-                  setEditMode(false);
-                  setEditedData(null);
-                }} 
-                className="btn btn-secondary mr-2 font-mono"
-                disabled={uploading}
+                onClick={() => navigate('/')} 
+                className="btn btn-secondary font-mono"
               >
                 CANCEL
               </button>
@@ -380,6 +394,46 @@ const POUpload = () => {
                     SAVING...
                   </div>
                 ) : 'SAVE TO SYSTEM'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Option to manually enter PO data - only show when not in manual mode and not showing success */}
+      {!success && !showManualForm && (
+        <div className="mt-4 text-center">
+          <button 
+            onClick={toggleManualForm}
+            className="btn btn-link text-orange-400 hover:text-orange-300"
+          >
+            OR ENTER PO DATA MANUALLY
+          </button>
+        </div>
+      )}
+
+      {/* Error Popup */}
+      {showErrorPopup && error && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+          <div className="bg-gray-900 border border-red-700 text-white p-6 rounded-lg shadow-lg max-w-md w-full">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-bold text-orange-500">Error!</h3>
+              <button 
+                onClick={handleDismissError}
+                className="text-gray-400 hover:text-white"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="mb-6">{error}</p>
+            <div className="flex justify-end">
+              <button
+                onClick={handleDismissError}
+                className="btn btn-primary glow-effect"
+              >
+                Dismiss
               </button>
             </div>
           </div>

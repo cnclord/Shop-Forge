@@ -25,4 +25,14 @@ Thumbs.db
 .idea
 .vscode
 *.swp
-*.swo 
+*.swo
+
+# Database files
+*.sqlite
+*.sqlite.*
+
+# Backup files
+*.backup.*
+
+# Uploads
+/server/uploads/ 

@@ -1,22 +1,53 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const Navbar = ({ notifications = [] }) => {
   const [showNotifications, setShowNotifications] = useState(false);
+  const location = useLocation();
   
   return (
     <nav className="bg-black border-b border-orange-600 shadow-lg">
       <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center py-4">
+        <div className="flex justify-between items-center py-3">
           <div className="flex items-center">
-            <Link to="/" className="text-2xl font-bold text-orange-500 font-mono tracking-wider glow-effect">SHOP_MASTER</Link>
+            <Link to="/" className="relative flex items-center">
+              {/* Hexagon Logo */}
+              <div className="mr-3 w-10 h-10 flex items-center justify-center">
+                <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" className="w-10 h-10">
+                  <g fill="none" stroke="#FF8C00" strokeWidth="3">
+                    <polygon points="50,10 90,30 90,70 50,90 10,70 10,30" />
+                    <polygon points="50,20 80,35 80,65 50,80 20,65 20,35" />
+                    <polygon points="50,30 70,40 70,60 50,70 30,60 30,40" />
+                    <polygon points="50,40 60,45 60,55 50,60 40,55 40,45" />
+                  </g>
+                </svg>
+              </div>
+              
+              {/* Text Logo */}
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-orange-500 font-mono tracking-wider">
+                  ShopForge
+                </span>
+                <span className="text-xs text-gray-400 font-mono -mt-1">MANUFACTURING CONTROL</span>
+              </div>
+            </Link>
+            
             <div className="ml-10 hidden md:flex space-x-6">
-              <Link to="/" className="text-white hover:text-orange-500 transition-colors uppercase font-mono">Mission Control</Link>
-              <Link to="/upload-po" className="text-white hover:text-orange-500 transition-colors uppercase font-mono">Upload Mission</Link>
+              <NavLink to="/">MISSION CONTROL</NavLink>
+              <NavLink to="/upload-po">UPLOAD MISSION</NavLink>
+              <NavLink to="/schedule">SCHEDULE</NavLink>
+              <NavLink to="/parts">PARTS LIBRARY</NavLink>
+              <NavLink to="/settings">SHOP SETTINGS</NavLink>
             </div>
           </div>
           
           <div className="flex items-center">
+            <Link to="/settings" className="mr-4 md:hidden">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </Link>
             <div className="relative">
               <button 
                 onClick={() => setShowNotifications(!showNotifications)} 
@@ -54,10 +85,39 @@ const Navbar = ({ notifications = [] }) => {
                 </div>
               )}
             </div>
+            
+            {/* Status indicator */}
+            <div className="ml-4 flex items-center">
+              <div className="h-2 w-2 rounded-full bg-green-500 mr-1"></div>
+              <span className="text-xs font-mono text-gray-400">ONLINE</span>
+            </div>
           </div>
         </div>
       </div>
     </nav>
+  );
+};
+
+// Custom NavLink component with active state handling
+const NavLink = ({ to, children }) => {
+  const location = useLocation();
+  const isActive = location.pathname === to || 
+                  (to !== '/' && location.pathname.startsWith(to));
+  
+  return (
+    <Link 
+      to={to} 
+      className={`text-white relative font-mono group overflow-hidden ${
+        isActive ? 'text-orange-500' : 'hover:text-orange-400'
+      }`}
+    >
+      <span className="relative z-10">{children}</span>
+      <span 
+        className={`absolute bottom-0 left-0 w-full h-0.5 bg-orange-500 transform origin-left transition-transform duration-300 ${
+          isActive ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
+        }`}
+      ></span>
+    </Link>
   );
 };
 

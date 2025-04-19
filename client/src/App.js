@@ -6,6 +6,11 @@ import io from 'socket.io-client';
 import Dashboard from './pages/Dashboard';
 import POUpload from './pages/POUpload';
 import PODetails from './pages/PODetails';
+import ShopSettings from './pages/ShopSettings';
+import Parts from './pages/Parts';
+import PartDetails from './pages/PartDetails';
+import Schedule from './pages/Schedule';
+import JobReport from './pages/JobReport';
 
 // Components
 import Navbar from './components/Navbar';
@@ -48,8 +53,13 @@ function App() {
         <div className="container mx-auto px-4 py-8 flex-grow">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/upload-po" element={<POUpload />} />
+            <Route path="/schedule" element={<Schedule />} />
             <Route path="/po/:id" element={<PODetails />} />
+            <Route path="/upload-po" element={<POUpload />} />
+            <Route path="/job-report/:id" element={<JobReport />} />
+            <Route path="/settings" element={<ShopSettings />} />
+            <Route path="/parts" element={<Parts />} />
+            <Route path="/parts/:id" element={<PartDetails />} />
           </Routes>
         </div>
         <div className={`fixed bottom-4 right-4 p-3 rounded-lg font-mono text-xs ${socketConnected ? 'bg-green-800 text-green-200 glow-effect' : 'bg-red-800 text-red-200'}`}>

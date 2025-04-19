@@ -48,7 +48,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
           status TEXT DEFAULT 'pending',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           pdf_path TEXT,
-          machine TEXT
+          machine TEXT,
+          quantity INTEGER DEFAULT 1,
+          scheduled_start_date TEXT,
+          scheduled_end_date TEXT
         )
       `, err => {
         if (err) {
@@ -77,9 +80,29 @@ const db = new sqlite3.Database(dbPath, (err) => {
             return closeDb();
           }
           console.log('Created po_items table');
-          
-          console.log('Database rebuild complete!');
-          closeDb();
+
+          // Create job_reports table
+          db.run(`
+            CREATE TABLE job_reports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              po_id INTEGER,
+              actual_hours REAL,
+              parts_completed INTEGER,
+              quality_issues TEXT,
+              notes TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
+            )
+          `, err => {
+            if (err) {
+              console.error('Error creating job_reports table:', err);
+              return closeDb();
+            }
+            console.log('Created job_reports table');
+            
+            console.log('Database rebuild complete!');
+            closeDb();
+          });
         });
       });
     });

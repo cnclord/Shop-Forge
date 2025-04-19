@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   PieChart, Pie, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -11,15 +11,15 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('table');
+  const [shopSettings, setShopSettings] = useState(null);
+  const [editingStatus, setEditingStatus] = useState(null);
+  const navigate = useNavigate();
 
   // Color constants for charts that match theme
   const COLORS = {
     orange: '#ff6600',
     orangeLight: '#ff8533',
     orangeDim: '#cc5200',
-    pending: '#f6e05e', // yellow
-    inProgress: '#63b3ed', // blue
-    completed: '#68d391', // green
     unassigned: '#a0aec0', // gray
     chart: {
       background: '#1e1e1e',
@@ -37,27 +37,42 @@ const Dashboard = () => {
     'UNASSIGNED': COLORS.unassigned
   };
 
-  // Status colors
-  const STATUS_COLORS = {
-    'pending': COLORS.pending,
-    'in-progress': COLORS.inProgress,
-    'completed': COLORS.completed,
-    'unknown': COLORS.unassigned
+  const getStatusStyle = (status) => {
+    const baseStyle = 'px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 cursor-pointer hover:opacity-90';
+    const statusConfig = shopSettings?.statuses?.find(s => s.name.toLowerCase() === status.toLowerCase());
+    
+    if (statusConfig) {
+      return {
+        className: `${baseStyle} text-white`,
+        style: { backgroundColor: statusConfig.color }
+      };
+    }
+    
+    return {
+      className: `${baseStyle} bg-gray-600 text-gray-100`
+    };
   };
 
   useEffect(() => {
     // Fetch real data from the backend
-    const fetchPOs = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axios.get('/api/purchase-orders');
-        setPurchaseOrders(response.data);
+        // Fetch purchase orders and shop settings in parallel
+        const [posResponse, settingsResponse] = await Promise.all([
+          axios.get('/api/purchase-orders'),
+          axios.get('/api/shop-settings')
+        ]);
+        
+        setPurchaseOrders(posResponse.data);
+        setShopSettings(settingsResponse.data);
         setLoading(false);
       } catch (err) {
+        console.error('Error fetching data:', err);
         setError('Failed to fetch purchase orders');
         setLoading(false);
       }
     };
-    fetchPOs();
+    fetchData();
   }, []);
 
   // Prepare data for charts
@@ -71,11 +86,14 @@ const Dashboard = () => {
       return acc;
     }, {});
 
-    const statusData = Object.keys(statusCounts).map(status => ({
-      name: status.charAt(0).toUpperCase() + status.slice(1),
-      value: statusCounts[status],
-      color: STATUS_COLORS[status] || COLORS.unassigned
-    }));
+    const statusData = Object.keys(statusCounts).map(status => {
+      const statusConfig = shopSettings?.statuses?.find(s => s.name.toLowerCase() === status.toLowerCase());
+      return {
+        name: status.charAt(0).toUpperCase() + status.slice(1),
+        value: statusCounts[status],
+        color: statusConfig?.color || COLORS.unassigned
+      };
+    });
 
     // For machine utilization bar chart
     const machineCounts = purchaseOrders.reduce((acc, po) => {
@@ -106,7 +124,36 @@ const Dashboard = () => {
     }).filter(item => item.count > 0);
 
     return { status: statusData, machines: machineData, timeline: timelineData };
-  }, [purchaseOrders]);
+  }, [purchaseOrders, shopSettings]);
+
+  // Add status update function
+  const updateStatus = async (poId, newStatus) => {
+    try {
+      // Find the status configuration to ensure we're using the correct case
+      const statusConfig = shopSettings?.statuses?.find(s => s.name === newStatus);
+      if (!statusConfig) {
+        console.error('Invalid status:', newStatus);
+        return;
+      }
+
+      // Use the exact status name from the configuration
+      const response = await axios.patch(`/api/purchase-orders/${poId}`, { 
+        status: statusConfig.name 
+      });
+
+      if (response.data) {
+        // Update local state with the exact same status name we sent
+        setPurchaseOrders(purchaseOrders.map(po => 
+          po.id === poId ? { ...po, status: statusConfig.name } : po
+        ));
+        setEditingStatus(null);
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      // Add error handling UI here
+      alert('Failed to update status. Please try again.');
+    }
+  };
 
   const getStatusBadgeClass = (status) => {
     switch(status) {
@@ -327,6 +374,7 @@ const Dashboard = () => {
                   <th scope="col" className="px-6 py-3 text-left">REVISION</th>
                   <th scope="col" className="px-6 py-3 text-left">DUE DATE</th>
                   <th scope="col" className="px-6 py-3 text-left">MACHINE TYPE</th>
+                  <th scope="col" className="px-6 py-3 text-left">QUANTITY</th>
                   <th scope="col" className="px-6 py-3 text-left">STATUS</th>
                   <th scope="col" className="px-6 py-3 text-left">ACTIONS</th>
                 </tr>
@@ -334,7 +382,7 @@ const Dashboard = () => {
               <tbody>
                 {purchaseOrders.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-4 text-center">NO MISSIONS FOUND</td>
+                    <td colSpan="7" className="px-6 py-4 text-center">NO MISSIONS FOUND</td>
                   </tr>
                 ) : (
                   purchaseOrders.map((po) => (
@@ -342,16 +390,51 @@ const Dashboard = () => {
                       <td className="px-6 py-4 whitespace-nowrap font-medium">{po.part_number || 'N/A'}</td>
                       <td className="px-6 py-4 whitespace-nowrap">{po.revision || 'N/A'}</td>
                       <td className="px-6 py-4 whitespace-nowrap">{po.due_date || 'N/A'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{po.machine || 'UNASSIGNED'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{po.machine || 'Not Assigned'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{po.quantity || 1}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeClass(po.status)}`}>
-                          {po.status.charAt(0).toUpperCase() + po.status.slice(1)}
-                        </span>
+                        {editingStatus === po.id ? (
+                          <div className="relative">
+                            <select
+                              value={po.status}
+                              onChange={(e) => updateStatus(po.id, e.target.value)}
+                              onBlur={() => setEditingStatus(null)}
+                              className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                              autoFocus
+                            >
+                              {shopSettings?.statuses?.map(status => (
+                                <option key={status.id} value={status.name}>
+                                  {status.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setEditingStatus(po.id)}
+                            className={`rounded-md border-[1px] border-opacity-20 bg-opacity-90 ${getStatusStyle(po.status).className}`}
+                            style={{
+                              ...getStatusStyle(po.status).style,
+                              backgroundColor: `${getStatusStyle(po.status).style.backgroundColor}22`,
+                              borderColor: getStatusStyle(po.status).style.backgroundColor
+                            }}
+                          >
+                            {po.status.charAt(0).toUpperCase() + po.status.slice(1)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <Link to={`/po/${po.id}`} className="hover:underline">
                           VIEW DETAILS
                         </Link>
+                        {po.status.toLowerCase() === 'completed' && (
+                          <button
+                            onClick={() => navigate(`/job-report/${po.id}`)}
+                            className="ml-2 text-orange-500 hover:text-orange-400"
+                          >
+                            FILL REPORT
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
