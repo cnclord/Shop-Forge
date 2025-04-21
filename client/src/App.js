@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import io from 'socket.io-client';
+import { initializeTheme, getSystemTheme } from './utils/themeManager';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -44,6 +45,18 @@ function App() {
     return () => {
       socket.disconnect();
     };
+  }, []);
+
+  // Initialize theme on app start - use system theme as default
+  useEffect(() => {
+    try {
+      const systemTheme = getSystemTheme();
+      initializeTheme(systemTheme);
+    } catch (error) {
+      console.error('Error initializing theme:', error);
+      // Fallback to dark theme if there's an error
+      initializeTheme('dark');
+    }
   }, []);
   
   return (

@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { initializeTheme, applyTheme, getSystemTheme, setupThemeListener } from '../utils/themeManager';
+
+// Helper function for unique IDs (if needed for local state before saving)
+const generateId = () => `op_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
 const ShopSettings = () => {
+  // Get the initial theme from localStorage if available
+  const savedTheme = localStorage.getItem('theme') || 'system';
+  
   const [settings, setSettings] = useState({
     machines: [],
+    machineTypes: [],
     hoursPerDay: 8,
     operatingDays: {
       monday: true,
@@ -15,17 +23,25 @@ const ShopSettings = () => {
       sunday: false
     },
     operatingHours: {
-      monday: 8,
-      tuesday: 8,
-      wednesday: 8,
-      thursday: 8,
-      friday: 8,
-      saturday: 8,
-      sunday: 8
+      monday_start: 9,
+      monday_end: 17,
+      tuesday_start: 9,
+      tuesday_end: 17,
+      wednesday_start: 9,
+      wednesday_end: 17,
+      thursday_start: 9,
+      thursday_end: 17,
+      friday_start: 9,
+      friday_end: 17,
+      saturday_start: 9,
+      saturday_end: 17,
+      sunday_start: 9,
+      sunday_end: 17
     },
     statuses: [],
+    operators: [],
     theme: {
-      colorScheme: 'dark',
+      colorScheme: savedTheme, // Use saved theme instead of system theme
       accentColor: 'orange'
     },
     display: {
@@ -47,8 +63,6 @@ const ShopSettings = () => {
     notes: ''
   });
 
-  const [machineTypes, setMachineTypes] = useState([]);
-  
   const [newMachineType, setNewMachineType] = useState('');
   const [editingMachine, setEditingMachine] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -60,39 +74,52 @@ const ShopSettings = () => {
   const [newStatus, setNewStatus] = useState({ name: '', color: '#ff6600' });
   const [editingStatus, setEditingStatus] = useState(null);
 
+  // State for Operators
+  const [newOperatorName, setNewOperatorName] = useState('');
+  const [editingOperator, setEditingOperator] = useState(null);
+
+  // Effect to initialize theme and set up listener
   useEffect(() => {
-    // Fetch current settings
+    // Initialize theme based on current settings
+    const currentTheme = settings.theme.colorScheme;
+    const activeTheme = currentTheme === 'system' ? getSystemTheme() : currentTheme;
+    applyTheme(activeTheme);
+
+    // Setup system theme change listener
+    const cleanup = setupThemeListener((newTheme) => {
+      if (settings.theme.colorScheme === 'system') {
+        applyTheme(newTheme);
+      }
+    });
+
+    return cleanup;
+  }, [settings.theme.colorScheme]);
+
+  // Fetch settings from server
+  useEffect(() => {
     const fetchSettings = async () => {
       try {
         const response = await axios.get('/api/shop-settings');
         if (response.data) {
+          // Preserve the theme from localStorage if it exists, otherwise use server theme
+          const themeToUse = localStorage.getItem('theme') || response.data.theme?.colorScheme || 'system';
+          
           // Ensure all required settings exist with defaults
           const updatedSettings = {
-            ...settings, // Keep our default values
-            ...response.data, // Override with server data
-            statuses: response.data.statuses || [],
+            ...settings,
+            ...response.data,
             theme: {
-              colorScheme: response.data.theme?.colorScheme || 'dark',
-              accentColor: response.data.theme?.accentColor || 'orange'
-            },
-            display: {
-              enableAnimations: response.data.display?.enableAnimations ?? true,
-              compactMode: response.data.display?.compactMode ?? false,
-              showGridLines: response.data.display?.showGridLines ?? true
-            },
-            notifications: {
-              emailEnabled: response.data.notifications?.emailEnabled ?? true,
-              desktopEnabled: response.data.notifications?.desktopEnabled ?? true,
-              sound: response.data.notifications?.sound || 'default'
+              colorScheme: themeToUse,
+              accentColor: response.data.theme?.accentColor || settings.theme.accentColor
             }
           };
           
           setSettings(updatedSettings);
           setInitialSettings(JSON.stringify(updatedSettings));
-          // If machine_types exists in the response, use it
-          if (response.data.machineTypes) {
-            setMachineTypes(response.data.machineTypes);
-          }
+          
+          // Apply the theme from settings
+          const activeTheme = themeToUse === 'system' ? getSystemTheme() : themeToUse;
+          applyTheme(activeTheme);
         }
         setLoading(false);
       } catch (err) {
@@ -109,16 +136,13 @@ const ShopSettings = () => {
     fetchSettings();
   }, []);
 
-  // Check for changes whenever settings or machineTypes change
+  // Check for changes whenever settings change
   useEffect(() => {
     if (initialSettings) {
-      const currentSettings = JSON.stringify({
-        ...settings,
-        machineTypes
-      });
+      const currentSettings = JSON.stringify(settings);
       setHasUnsavedChanges(currentSettings !== initialSettings);
     }
-  }, [settings, machineTypes, initialSettings]);
+  }, [settings, initialSettings]);
 
   const handleDayHoursChange = (day, hours) => {
     const numHours = Math.min(Math.max(parseFloat(hours) || 0, 0), 24);
@@ -232,7 +256,7 @@ const ShopSettings = () => {
     if (!trimmedType) return;
     
     // Don't add if it already exists (case-insensitive check)
-    if (machineTypes.some(type => type.toLowerCase() === trimmedType.toLowerCase())) {
+    if (settings.machineTypes.some(type => type.toLowerCase() === trimmedType.toLowerCase())) {
       setSaveStatus({
         message: 'This machine type already exists',
         isError: true
@@ -252,8 +276,11 @@ const ShopSettings = () => {
     }
     
     // Add new machine type
-    const updatedMachineTypes = [...machineTypes, trimmedType];
-    setMachineTypes(updatedMachineTypes);
+    const updatedMachineTypes = [...settings.machineTypes, trimmedType].sort();
+    setSettings(prev => ({
+      ...prev,
+      machineTypes: updatedMachineTypes
+    }));
     setNewMachineType('');
 
     // Save settings immediately
@@ -294,8 +321,11 @@ const ShopSettings = () => {
     }
     
     // Remove the machine type
-    const updatedMachineTypes = machineTypes.filter(type => type !== typeToRemove);
-    setMachineTypes(updatedMachineTypes);
+    const updatedMachineTypes = settings.machineTypes.filter(type => type !== typeToRemove);
+    setSettings(prev => ({
+      ...prev,
+      machineTypes: updatedMachineTypes
+    }));
 
     // Save settings immediately
     try {
@@ -328,18 +358,13 @@ const ShopSettings = () => {
         operatingDays: settings.operatingDays,
         operatingHours: settings.operatingHours,
         machines: settings.machines,
-        machineTypes: machineTypes,
+        machineTypes: settings.machineTypes,
         statuses: settings.statuses,
-        theme: settings.theme,
-        display: settings.display,
-        notifications: settings.notifications
+        operators: settings.operators
       });
       
       // Update initial settings after successful save
-      setInitialSettings(JSON.stringify({
-        ...settings,
-        machineTypes
-      }));
+      setInitialSettings(JSON.stringify(settings));
       setHasUnsavedChanges(false);
       
       setSaveStatus({
@@ -466,6 +491,15 @@ const ShopSettings = () => {
 
   const handleThemeChange = (e) => {
     const { name, value } = e.target;
+    
+    // Apply theme immediately if changing color scheme
+    if (name === 'colorScheme') {
+      const newTheme = value === 'system' ? getSystemTheme() : value;
+      applyTheme(newTheme);
+      // Save to localStorage
+      localStorage.setItem('theme', value);
+    }
+    
     setSettings(prev => ({
       ...prev,
       theme: {
@@ -473,6 +507,7 @@ const ShopSettings = () => {
         [name]: value
       }
     }));
+    setHasUnsavedChanges(true);
   };
 
   const handleDisplayChange = (setting) => {
@@ -513,10 +548,193 @@ const ShopSettings = () => {
     };
   }, []);
 
+  // --- Operator Functions ---
+  const handleNewOperatorChange = (e) => {
+    setNewOperatorName(e.target.value);
+  };
+
+  const addOperator = () => {
+    const trimmedName = newOperatorName.trim();
+    if (!trimmedName) return;
+
+    // Prevent adding duplicates (case-insensitive)
+    if (settings.operators.some(op => op.name.toLowerCase() === trimmedName.toLowerCase())) {
+        setSaveStatus({ message: `Operator "${trimmedName}" already exists.`, isError: true });
+        setShowMessagePopup(true);
+        return;
+    }
+
+    const newOp = {
+      id: generateId(), // Generate temporary ID for local state/key
+      name: trimmedName
+    };
+
+    setSettings(prev => ({
+      ...prev,
+      operators: [...prev.operators, newOp].sort((a, b) => a.name.localeCompare(b.name))
+    }));
+    setNewOperatorName('');
+  };
+
+  const removeOperator = (idToRemove) => {
+    // Optional: Check if operator is assigned to any jobs before removing
+    // This would require fetching PO data or adding a check on the backend during save.
+    // For simplicity, we'll allow removal here.
+    setSettings(prev => ({
+      ...prev,
+      operators: prev.operators.filter(op => op.id !== idToRemove)
+    }));
+  };
+
+  const startEditingOperator = (operator) => {
+    setEditingOperator({ ...operator });
+  };
+
+  const cancelEditingOperator = () => {
+    setEditingOperator(null);
+  };
+
+  const handleEditingOperatorChange = (e) => {
+    setEditingOperator(prev => ({ ...prev, name: e.target.value }));
+  };
+
+  const saveEditedOperator = () => {
+    const trimmedName = editingOperator.name.trim();
+    if (!trimmedName) {
+        setSaveStatus({ message: 'Operator name cannot be empty.', isError: true });
+        setShowMessagePopup(true);
+        return;
+    }
+
+    // Check if the new name conflicts with another existing operator (excluding itself)
+    if (settings.operators.some(op => op.id !== editingOperator.id && op.name.toLowerCase() === trimmedName.toLowerCase())) {
+        setSaveStatus({ message: `Operator name "${trimmedName}" already exists.`, isError: true });
+        setShowMessagePopup(true);
+        return;
+    }
+
+    setSettings(prev => ({
+      ...prev,
+      operators: prev.operators.map(op =>
+        op.id === editingOperator.id ? { ...op, name: trimmedName } : op
+      ).sort((a, b) => a.name.localeCompare(b.name))
+    }));
+    setEditingOperator(null);
+  };
+  // --- End Operator Functions ---
+
+  // Add new save handler functions
+  const saveOperatingHours = async () => {
+    try {
+      await saveSettings();
+      setSaveStatus({
+        message: 'Operating hours saved successfully',
+        isError: false
+      });
+      setShowMessagePopup(true);
+    } catch (error) {
+      setSaveStatus({
+        message: 'Failed to save operating hours',
+        isError: true
+      });
+      setShowMessagePopup(true);
+    }
+  };
+
+  const saveMachines = async () => {
+    try {
+      await saveSettings();
+      setSaveStatus({
+        message: 'Machines saved successfully',
+        isError: false
+      });
+      setShowMessagePopup(true);
+    } catch (error) {
+      setSaveStatus({
+        message: 'Failed to save machines',
+        isError: true
+      });
+      setShowMessagePopup(true);
+    }
+  };
+
+  const saveMachineTypes = async () => {
+    try {
+      await saveSettings();
+      setSaveStatus({
+        message: 'Machine types saved successfully',
+        isError: false
+      });
+      setShowMessagePopup(true);
+    } catch (error) {
+      setSaveStatus({
+        message: 'Failed to save machine types',
+        isError: true
+      });
+      setShowMessagePopup(true);
+    }
+  };
+
+  const saveStatuses = async () => {
+    try {
+      await saveSettings();
+      setSaveStatus({
+        message: 'Statuses saved successfully',
+        isError: false
+      });
+      setShowMessagePopup(true);
+    } catch (error) {
+      setSaveStatus({
+        message: 'Failed to save statuses',
+        isError: true
+      });
+      setShowMessagePopup(true);
+    }
+  };
+
+  const saveGeneralSettings = async () => {
+    try {
+      await saveSettings();
+      setSaveStatus({
+        message: 'General settings saved successfully',
+        isError: false
+      });
+      setShowMessagePopup(true);
+    } catch (error) {
+      setSaveStatus({
+        message: 'Failed to save general settings',
+        isError: true
+      });
+      setShowMessagePopup(true);
+    }
+  };
+
+  const saveOperators = async () => {
+    try {
+      await saveSettings();
+      setSaveStatus({
+        message: 'Operators saved successfully',
+        isError: false
+      });
+      setShowMessagePopup(true);
+    } catch (error) {
+      setSaveStatus({
+        message: 'Failed to save operators',
+        isError: true
+      });
+      setShowMessagePopup(true);
+    }
+  };
+
+  // Update the message popup styling
+  const getMessagePopupClasses = () => {
+    return `message-popup ${saveStatus.isError ? 'error' : 'success'}`;
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 glow-effect"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent-primary"></div>
       </div>
     );
   }
@@ -528,7 +746,16 @@ const ShopSettings = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Operating Hours Section - Full Width */}
         <div className="card col-span-1 md:col-span-2 mb-6">
-          <h2 className="text-xl font-semibold mb-4 text-orange-400 font-mono">OPERATING HOURS</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-orange-400 font-mono">OPERATING HOURS</h2>
+            <button
+              onClick={saveOperatingHours}
+              disabled={!hasUnsavedChanges}
+              className={`btn btn-sm btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Save
+            </button>
+          </div>
           
           <div>
             <div className="grid grid-cols-7 gap-2">
@@ -571,7 +798,16 @@ const ShopSettings = () => {
 
         {/* Machines Section */}
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4 text-orange-400 font-mono">MACHINES</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-orange-400 font-mono">MACHINES</h2>
+            <button
+              onClick={saveMachines}
+              disabled={!hasUnsavedChanges}
+              className={`btn btn-sm btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Save
+            </button>
+          </div>
           
           {/* Add New Machine Form */}
           <div className="bg-gray-800 p-4 rounded-md mb-4">
@@ -603,7 +839,7 @@ const ShopSettings = () => {
                   className="select w-full"
                 >
                   <option value="">Select Machine Type</option>
-                  {machineTypes.map(type => (
+                  {settings.machineTypes.map(type => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
@@ -683,7 +919,7 @@ const ShopSettings = () => {
                             className="select w-full"
                           >
                             <option value="">Select Machine Type</option>
-                            {machineTypes.map(type => (
+                            {settings.machineTypes.map(type => (
                               <option key={type} value={type}>{type}</option>
                             ))}
                           </select>
@@ -776,7 +1012,16 @@ const ShopSettings = () => {
 
         {/* Machine Types Section */}
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4 text-orange-400 font-mono">MACHINE TYPES</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-orange-400 font-mono">MACHINE TYPES</h2>
+            <button
+              onClick={saveMachineTypes}
+              disabled={!hasUnsavedChanges}
+              className={`btn btn-sm btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Save
+            </button>
+          </div>
           
           {/* Add New Machine Type Form */}
           <div className="bg-gray-800 p-4 rounded-md mb-4">
@@ -799,7 +1044,7 @@ const ShopSettings = () => {
           
           {/* Machine Types List */}
           <div className="space-y-2">
-            {machineTypes.map((type) => (
+            {settings.machineTypes.map((type) => (
               <div key={type} className="flex justify-between items-center bg-gray-800 p-2 rounded">
                 <span>{type}</span>
                 <button
@@ -815,7 +1060,16 @@ const ShopSettings = () => {
 
         {/* Status Management Section */}
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4 text-orange-400 font-mono">STATUS MANAGEMENT</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-orange-400 font-mono">STATUS MANAGEMENT</h2>
+            <button
+              onClick={saveStatuses}
+              disabled={!hasUnsavedChanges}
+              className={`btn btn-sm btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Save
+            </button>
+          </div>
           
           {/* Add New Status */}
           <div className="bg-gray-800 p-4 rounded-md mb-4">
@@ -916,10 +1170,19 @@ const ShopSettings = () => {
 
         {/* General Settings Section */}
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4 text-orange-400 font-mono">GENERAL SETTINGS</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-accent-primary font-mono">GENERAL SETTINGS</h2>
+            <button
+              onClick={saveGeneralSettings}
+              disabled={!hasUnsavedChanges}
+              className={`btn btn-sm btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Save
+            </button>
+          </div>
           
           {/* Theme Settings */}
-          <div className="bg-gray-800 p-4 rounded-md mb-4">
+          <div className="bg-secondary p-4 rounded-md mb-4">
             <h3 className="text-lg font-medium mb-3">Theme</h3>
             <div className="space-y-3">
               <div>
@@ -930,7 +1193,7 @@ const ShopSettings = () => {
                   name="colorScheme"
                   value={settings.theme.colorScheme}
                   onChange={handleThemeChange}
-                  className="select w-full bg-gray-700 border-gray-600"
+                  className="select w-full"
                 >
                   <option value="dark">Dark Theme</option>
                   <option value="light">Light Theme</option>
@@ -945,7 +1208,7 @@ const ShopSettings = () => {
                   name="accentColor"
                   value={settings.theme.accentColor}
                   onChange={handleThemeChange}
-                  className="select w-full bg-gray-700 border-gray-600"
+                  className="select w-full"
                 >
                   <option value="orange">Orange</option>
                   <option value="blue">Blue</option>
@@ -1030,24 +1293,81 @@ const ShopSettings = () => {
             </div>
           </div>
         </div>
+
+        {/* Operators Section */}
+        <div className="card bg-base-200 shadow-inner mb-6">
+          <div className="card-body">
+            <div className="flex justify-between items-center">
+              <h2 className="card-title text-orange-500">Operators</h2>
+              <button
+                onClick={saveOperators}
+                disabled={!hasUnsavedChanges}
+                className={`btn btn-sm btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                Save
+              </button>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">Manage the operators available for job assignments.</p>
+
+            {/* List Operators */}
+            <div className="mb-4 max-h-60 overflow-y-auto border border-base-300 rounded p-2">
+              {settings.operators.length === 0 ? (
+                <p className="text-gray-500 italic text-center py-4">No operators defined.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {settings.operators.map((operator) => (
+                    <li key={operator.id} className="flex items-center justify-between bg-base-100 p-2 rounded">
+                      {editingOperator && editingOperator.id === operator.id ? (
+                        // Editing View
+                        <div className="flex-grow flex items-center space-x-2 mr-2">
+                          <input
+                            type="text"
+                            value={editingOperator.name}
+                            onChange={handleEditingOperatorChange}
+                            className="input input-sm flex-grow"
+                            autoFocus
+                          />
+                          <button onClick={saveEditedOperator} className="btn btn-xs btn-success">Save</button>
+                          <button onClick={cancelEditingOperator} className="btn btn-xs btn-ghost">Cancel</button>
+                        </div>
+                      ) : (
+                        // Display View
+                        <> 
+                          <span className="font-mono">{operator.name}</span>
+                          <div className="space-x-1">
+                            <button onClick={() => startEditingOperator(operator)} className="btn btn-xs btn-ghost">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                            <button onClick={() => removeOperator(operator.id)} className="btn btn-xs btn-ghost text-error">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Add New Operator */}
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                placeholder="New Operator Name"
+                value={newOperatorName}
+                onChange={handleNewOperatorChange}
+                className="input input-bordered w-full"
+              />
+              <button onClick={addOperator} className="btn btn-secondary">ADD</button>
+            </div>
+          </div>
+        </div>
       </div>
       
-      {/* Save Changes Button */}
-      <div className="flex justify-end">
-        <button
-          onClick={saveSettings}
-          disabled={!hasUnsavedChanges}
-          className={`btn btn-primary glow-effect ${!hasUnsavedChanges ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          Save Changes
-        </button>
-      </div>
-
       {/* Message Popup */}
       {showMessagePopup && (
-        <div className={`fixed bottom-4 right-4 p-4 rounded-lg shadow-lg ${
-          saveStatus.isError ? 'bg-red-900 text-red-100' : 'bg-green-900 text-green-100'
-        }`}>
+        <div className={getMessagePopupClasses()}>
           <p>{saveStatus.message}</p>
         </div>
       )}

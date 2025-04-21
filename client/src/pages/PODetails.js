@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
@@ -17,6 +17,9 @@ const PODetails = () => {
   const [addingToParts, setAddingToParts] = useState(false);
   const [partAdded, setPartAdded] = useState(false);
   const [shopSettings, setShopSettings] = useState(null);
+  
+  // Derived state for operators list
+  const operators = useMemo(() => shopSettings?.operators || [], [shopSettings]);
   
   useEffect(() => {
     const fetchData = async () => {
@@ -177,6 +180,7 @@ const PODetails = () => {
   
   const handleSave = async () => {
     setSaving(true);
+    setError(null); // Clear previous errors
     try {
       // Validate machine type
       const machineTypes = shopSettings?.machineTypes || [];
@@ -200,10 +204,11 @@ const PODetails = () => {
         due_date: editedPO.due_date,
         status: editedPO.status,
         machine: machineType,
-        quantity: editedPO.quantity || 1
+        quantity: editedPO.quantity || 1,
+        operator_id: editedPO.operator_id || null // Include operator_id
       };
 
-      console.log('Sending PO update with machine type:', updatedPO.machine);
+      console.log('Sending PO update:', updatedPO);
       
       const response = await axios.put(`/api/purchase-orders/${id}`, updatedPO);
       console.log('Server response:', response.data);
@@ -421,6 +426,13 @@ const PODetails = () => {
     } catch (err) {
       console.error("Error refreshing part data:", err);
     }
+  };
+  
+  // Find operator name from ID
+  const getOperatorName = (operatorId) => {
+    if (!operatorId || !operators) return 'N/A';
+    const operator = operators.find(op => op.id === operatorId);
+    return operator ? operator.name : 'Unknown';
   };
   
   if (loading) {
@@ -704,6 +716,27 @@ const PODetails = () => {
               )}
             </p>
           </div>
+        </div>
+
+        {/* Operator */}                       
+        <div className="card">
+          <h3 className="text-orange-500 text-sm font-semibold mb-2 font-mono">OPERATOR</h3>
+          {editing ? (
+            <select
+              name="operator_id"
+              value={editedPO.operator_id || ''}
+              onChange={handleChange}
+              className="select w-full bg-black border-orange-500 text-white font-mono"
+            >
+              <option value="">Not Assigned</option>
+              {operators.map(op => (
+                <option key={op.id} value={op.id}>{op.name}</option>
+              ))}
+              <option value="">-- Unassign --</option>
+            </select>
+          ) : (
+            <p className="text-lg">{poDetails.operator_id ? getOperatorName(poDetails.operator_id) : 'Not Assigned'}</p>
+          )}
         </div>
       </div>
       

@@ -4,9 +4,9 @@
   "description": "Machine shop logistics and management app",
   "main": "index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "server": "nodemon server/index.js",
-    "client": "cd client && npm start",
+    "start": "set PORT=5001 && node server/index.js",
+    "server": "set PORT=5001 && nodemon server/index.js",
+    "client": "cd client && set PORT=3001 && npm start",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "install-all": "npm install && cd client && npm install"
   },

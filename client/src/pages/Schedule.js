@@ -143,7 +143,8 @@ const Schedule = () => {
           machine: po.machine,
           setup_time: po.part_data?.setup_time || 0,
           cycle_time: po.part_data?.cycle_time || 0,
-          total_time_required: po.total_time_required
+          total_time_required: po.total_time_required,
+          operator_id: po.operator_id
         };
         
         // Find the machine this job is assigned to
@@ -279,7 +280,7 @@ const Schedule = () => {
     };
   };
   
-  // Update the getNextOperatingDate to safely handle missing operating hours
+  // Update the getNextOperatingDate to handle operating hours correctly
   const getNextOperatingDate = (date) => {
     if (!shopSettings?.operatingDays) return date;
     
@@ -290,14 +291,15 @@ const Schedule = () => {
     const dayOfWeek = result.getDay();
     const dayKey = dayNames[dayOfWeek];
     
-    // Safely access the end hour with a default value of 17 (5 PM)
+    // Get the end hour from operating_hours with the correct format
     const endHour = shopSettings.operatingHours && 
-                    shopSettings.operatingHours[`${dayKey}_end`] ? 
-                    parseInt(shopSettings.operatingHours[`${dayKey}_end`]) : 17;
+                   shopSettings.operatingHours[`${dayKey}_end`] ? 
+                   parseInt(shopSettings.operatingHours[`${dayKey}_end`]) : 17;
     
     if (result.getHours() >= endHour) {
       // Move to the next day and reset the time to start of business
       result.setDate(result.getDate() + 1);
+      result.setHours(0, 0, 0, 0);
     }
     
     // Find the next operating day
@@ -308,10 +310,9 @@ const Schedule = () => {
       
       if (shopSettings.operatingDays[currentDayKey]) {
         // This is an operating day
-        // Safely access the start hour with a default value of 9 AM
         const startHour = shopSettings.operatingHours && 
-                          shopSettings.operatingHours[`${currentDayKey}_start`] ? 
-                          parseInt(shopSettings.operatingHours[`${currentDayKey}_start`]) : 9;
+                         shopSettings.operatingHours[`${currentDayKey}_start`] ? 
+                         parseInt(shopSettings.operatingHours[`${currentDayKey}_start`]) : 9;
         
         result.setHours(startHour, 0, 0, 0);
         return result;
@@ -319,6 +320,7 @@ const Schedule = () => {
       
       // Not an operating day, move to the next day
       result.setDate(result.getDate() + 1);
+      result.setHours(0, 0, 0, 0);
       daysChecked++;
     }
     
@@ -326,7 +328,7 @@ const Schedule = () => {
     return date;
   };
   
-  // Update the addWorkingDays function to safely handle missing operating hours
+  // Update the addWorkingDays function to handle operating hours correctly
   const addWorkingDays = (startDate, totalHours, shopSettings) => {
     if (!shopSettings?.operatingDays) return startDate;
     
@@ -341,7 +343,7 @@ const Schedule = () => {
       
       // Check if this is an operating day
       if (shopSettings.operatingDays[dayKey]) {
-        // Get operating hours for this day
+        // Get operating hours for this day from the correct format
         const startHour = shopSettings.operatingHours?.[`${dayKey}_start`] || 9;
         const endHour = shopSettings.operatingHours?.[`${dayKey}_end`] || 17;
         const hoursInDay = endHour - startHour;
@@ -368,7 +370,9 @@ const Schedule = () => {
       // If we still have hours remaining, move to next day
       if (hoursRemaining > 0) {
         result.setDate(result.getDate() + 1);
-        result.setHours(shopSettings.operatingHours?.[`${dayNames[result.getDay()]}_start`] || 9, 0, 0, 0);
+        const nextDayKey = dayNames[result.getDay()];
+        const nextDayStartHour = shopSettings.operatingHours?.[`${nextDayKey}_start`] || 9;
+        result.setHours(nextDayStartHour, 0, 0, 0);
       }
     }
     
@@ -445,12 +449,27 @@ const Schedule = () => {
         !po.scheduled_start_date || !po.scheduled_end_date
       );
       
-      // Sort jobs by due date and priority
+      // Sort jobs by due date and priority (past due first)
       const sortedJobs = [...unscheduledJobs].sort((a, b) => {
-        if (a.due_date && b.due_date) {
-          return new Date(a.due_date) - new Date(b.due_date);
+        const now = new Date();
+        now.setHours(0, 0, 0, 0); // Compare dates only
+        
+        const aDueDate = a.due_date ? new Date(a.due_date) : null;
+        const bDueDate = b.due_date ? new Date(b.due_date) : null;
+        
+        const aIsPastDue = aDueDate && aDueDate < now;
+        const bIsPastDue = bDueDate && bDueDate < now;
+
+        // Prioritize past due jobs
+        if (aIsPastDue && !bIsPastDue) return -1;
+        if (!aIsPastDue && bIsPastDue) return 1;
+
+        // If both are past due or neither are, sort by due date
+        if (aDueDate && bDueDate) {
+          return aDueDate - bDueDate;
         }
-        return a.due_date ? -1 : b.due_date ? 1 : 0;
+        // Handle cases where one or both due dates are missing
+        return aDueDate ? -1 : bDueDate ? 1 : 0;
       });
 
       // Keep track of machine schedules
@@ -766,42 +785,56 @@ const Schedule = () => {
     };
   };
 
-  // Add function to calculate parts completed per day
-  const calculatePartsCompletedByDay = (job, date) => {
+  // Calculate total parts completed *up to* a given date, simulating day by day
+  const calculatePartsCompletedByDay = (job, targetDate, shopSettings) => {
     if (!job.scheduledStart) return 0;
-    
-    const checkDate = new Date(date);
+
     const startDate = new Date(job.scheduledStart);
-    
-    // Reset time components for date comparison
-    checkDate.setHours(0, 0, 0, 0);
+    const checkDate = new Date(targetDate);
     startDate.setHours(0, 0, 0, 0);
-    
-    // If this is before the start date, no parts completed
+    checkDate.setHours(0, 0, 0, 0);
+
     if (checkDate < startDate) return 0;
-    
+
+    const setupTime = job.setup_time || job.part_data?.setup_time || 0.25;
+    const cycleTime = job.cycle_time || job.part_data?.cycle_time || 0.5;
     const totalQuantity = job.quantity || 1;
-    
-    // Get the job duration in days
-    const scheduledEndDate = job.scheduledEnd ? new Date(job.scheduledEnd) : null;
-    if (!scheduledEndDate) return 0;
-    
-    scheduledEndDate.setHours(0, 0, 0, 0);
-    
-    // If this is after the end date, all parts are completed
-    if (checkDate > scheduledEndDate) return totalQuantity;
-    
-    // Calculate days passed including the current day
-    const daysPassed = Math.floor((checkDate - startDate) / (24 * 60 * 60 * 1000)) + 1;
-    const totalDays = Math.floor((scheduledEndDate - startDate) / (24 * 60 * 60 * 1000)) + 1;
-    
-    // Calculate proportional parts completed
-    const partsCompleted = Math.min(
-      Math.ceil((daysPassed / totalDays) * totalQuantity),
-      totalQuantity
-    );
-    
-    return partsCompleted;
+
+    let completedParts = 0;
+    let currentDate = new Date(startDate);
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+    while (currentDate <= checkDate && completedParts < totalQuantity) {
+        const dayOfWeek = currentDate.getDay();
+        const dayKey = dayNames[dayOfWeek];
+        const isOperatingDay = shopSettings?.operatingDays ? shopSettings.operatingDays[dayKey] : true;
+
+        if (isOperatingDay) {
+            // Get total operating hours for this day
+            const operatingHoursForDay = shopSettings?.operatingHours?.[dayKey] ?? 8;
+
+            let partsToday = 0;
+            if (currentDate.getTime() === startDate.getTime()) { // First day
+                if (operatingHoursForDay > setupTime && cycleTime > 0) {
+                    const availableProductionTime = operatingHoursForDay - setupTime;
+                    partsToday = Math.floor(availableProductionTime / cycleTime);
+                }
+            } else { // Subsequent days
+                if (cycleTime > 0) {
+                    partsToday = Math.floor(operatingHoursForDay / cycleTime);
+                }
+            }
+
+            // Ensure we don't calculate more parts than remaining
+            partsToday = Math.max(0, Math.min(partsToday, totalQuantity - completedParts));
+            completedParts += partsToday;
+        }
+
+        // Move to the next day
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return completedParts;
   };
 
   const calculatePartsForDay = (job, date, shopSettings) => {
@@ -816,72 +849,101 @@ const Schedule = () => {
     startDate.setHours(0, 0, 0, 0);
     currentDate.setHours(0, 0, 0, 0);
 
-    // If this date is before the start date, return 0
-    if (currentDate < startDate) {
-        return { partsPerDay: 0, hoursPerDay: 0, totalQuantity };
-    }
-
     // Check if this is an operating day
     const dayOfWeek = currentDate.getDay();
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const isOperatingDay = shopSettings?.operatingDays ? 
-        shopSettings.operatingDays[dayNames[dayOfWeek]] : true;
+    const dayKey = dayNames[dayOfWeek];
+    const isOperatingDay = shopSettings?.operatingDays ? shopSettings.operatingDays[dayKey] : true;
 
     if (!isOperatingDay) {
         return { partsPerDay: 0, hoursPerDay: 0, totalQuantity };
     }
 
-    // Get the operating hours for this specific day
-    const operatingHoursForDay = shopSettings?.operatingHours?.[dayNames[dayOfWeek]] || 8;
+    // Get the total operating hours for this day
+    const operatingHoursForDay = shopSettings?.operatingHours?.[dayKey] ?? 8; // Default to 8 hours if not set
 
-    // Calculate how many parts we can make today based on operating hours
-    const maxPartsToday = Math.floor(operatingHoursForDay / cycleTime);
+    console.log('Operating hours check:', {
+        day: dayKey,
+        operatingHoursForDay,
+        rawSettings: shopSettings?.operatingHours
+    });
 
-    // Get actual completed parts up to yesterday
+    // Get actual completed parts up to *yesterday*
     const yesterday = new Date(currentDate);
     yesterday.setDate(yesterday.getDate() - 1);
-    const completedParts = calculatePartsCompletedByDay(job, yesterday);
+    const completedPartsYesterday = calculatePartsCompletedByDay(job, yesterday, shopSettings);
 
-    // Calculate remaining parts
-    const remainingParts = Math.max(0, totalQuantity - completedParts);
+    // Calculate remaining parts for today and onwards
+    const remainingParts = Math.max(0, totalQuantity - completedPartsYesterday);
 
-    // Calculate parts to make today
-    let partsPerDay = Math.min(maxPartsToday, remainingParts);
-    let hoursPerDay = partsPerDay * cycleTime;
+    let partsPerDay = 0;
+    let hoursPerDay = 0;
 
-    // If this is the first day, account for setup time
-    if (currentDate.getTime() === startDate.getTime()) {
-        const maxPartsFirstDay = Math.floor((operatingHoursForDay - setupTime) / cycleTime);
-        partsPerDay = Math.min(maxPartsFirstDay, remainingParts);
-        hoursPerDay = setupTime + (partsPerDay * cycleTime);
+    // Calculate parts possible today based on whether it's the first day
+    if (currentDate.getTime() === startDate.getTime()) { // First day logic
+        if (operatingHoursForDay > setupTime && cycleTime > 0) {
+            const availableProductionTime = operatingHoursForDay - setupTime;
+            partsPerDay = Math.floor(availableProductionTime / cycleTime);
+            partsPerDay = Math.min(partsPerDay, remainingParts);
+            hoursPerDay = setupTime + (partsPerDay * cycleTime);
+        } else {
+            partsPerDay = 0;
+            hoursPerDay = Math.min(setupTime, operatingHoursForDay);
+        }
+    } else { // Subsequent day logic
+        if (cycleTime > 0) {
+            partsPerDay = Math.floor(operatingHoursForDay / cycleTime);
+            partsPerDay = Math.min(partsPerDay, remainingParts);
+            hoursPerDay = partsPerDay * cycleTime;
+        }
     }
-
-    // Ensure we never return negative values
-    partsPerDay = Math.max(0, partsPerDay);
-    hoursPerDay = Math.max(0, hoursPerDay);
-
-    console.log(`
-=== JOB CALCULATION DEBUG ===
-Raw job data:
-- ID: ${job.id}
-- Part Number: ${job.partNumber}
-- Setup Time: ${setupTime} hours
-- Cycle Time: ${cycleTime} hours
-- Quantity: ${totalQuantity}
-- Operating Hours for ${dayNames[dayOfWeek]}: ${operatingHoursForDay}
-- Max Parts Today: ${maxPartsToday}
-- Completed Parts: ${completedParts}
-- Remaining Parts: ${remainingParts}
-- Parts Per Day: ${partsPerDay}
-- Hours Per Day: ${hoursPerDay}
-=== END DEBUG ===
-`);
 
     return {
         partsPerDay,
         hoursPerDay,
         totalQuantity
     };
+  };
+
+  // Add a handler for changing the operator via dropdown
+  const handleOperatorChange = async (jobId, operatorId) => {
+    console.log('Operator change requested:', { jobId, operatorId }); // Debug log
+
+    try {
+      // Make the API call first
+      const response = await axios.patch(`/api/purchase-orders/${jobId}`, { 
+        operator_id: operatorId === 'UNASSIGN' ? null : operatorId 
+      });
+      
+      console.log('API response:', response.data); // Debug log
+
+      // If API call succeeds, update local state with the returned PO data
+      if (response.data.purchaseOrder) {
+        setPurchaseOrders(prevOrders => 
+          prevOrders.map(po => 
+            po.id === jobId ? { ...po, ...response.data.purchaseOrder } : po
+          )
+        );
+      } else {
+        // If we don't get the updated PO back, fetch fresh data
+        const refreshResponse = await axios.get('/api/purchase-orders');
+        setPurchaseOrders(refreshResponse.data);
+      }
+
+      console.log('Local state updated for job:', jobId); // Debug log
+    } catch (err) {
+      console.error('Error updating operator:', err);
+      setError(`Failed to assign operator to job ${jobId}`);
+      setShowErrorPopup(true);
+      
+      // Refresh the data to ensure we're in sync
+      try {
+        const refreshResponse = await axios.get('/api/purchase-orders');
+        setPurchaseOrders(refreshResponse.data);
+      } catch (refreshErr) {
+        console.error('Error refreshing data:', refreshErr);
+      }
+    }
   };
 
   if (loading) {
@@ -1077,7 +1139,7 @@ Raw job data:
                 <div key={machine.id} className="mb-2">
                   <div className="grid grid-cols-[200px_repeat(7,1fr)] gap-2">
                     {/* Machine column */}
-                    <div className="bg-[#1f1f1f] rounded p-2 h-24">
+                    <div className="bg-[#1f1f1f] rounded p-2 h-32">
                       <div className="font-mono text-lg font-bold">{machine.name}</div>
                       <div className="text-sm text-gray-400">{machine.type}</div>
                     </div>
@@ -1094,7 +1156,7 @@ Raw job data:
                       return (
                         <div 
                           key={index} 
-                          className={`h-24 rounded ${
+                          className={`h-32 rounded ${
                             !isOperatingDay 
                               ? 'bg-[#1a1a1a] opacity-50' 
                               : !isCurrentMonth && viewMode === 'month'
@@ -1104,58 +1166,109 @@ Raw job data:
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={() => handleDrop(date, machine.id)}
                         >
-                          {/* Jobs scheduled for this date */}
-                          {machine.jobs
-                            .filter(job => isJobScheduledForDay(job, date))
-                            .map(job => {
-                              const calculation = calculatePartsForDay(job, date, shopSettings);
-                              return (
-                                <div 
-                                  key={job.id}
-                                  className={`h-[88px] mx-0.5 my-0.5 rounded-md border-[1px] border-opacity-20 bg-opacity-90 flex flex-col ${getStatusColor(job.status).className}`}
-                                  style={{
-                                    ...getStatusColor(job.status).style,
-                                    backgroundColor: `${getStatusColor(job.status).style.backgroundColor}22`,
-                                    borderColor: getStatusColor(job.status).style.backgroundColor
-                                  }}
-                                  draggable
-                                  onDragStart={() => handleDragStart(job, machine.id)}
-                                >
-                                  <Link to={`/po/${job.id}`} className="block flex-1 flex flex-col">
-                                    {/* Part Number Header */}
-                                    <div className="font-mono text-[10px] font-bold text-orange-400 border-b border-orange-400 border-opacity-20 px-1.5 py-0.5">
-                                      {job.partNumber || 'No Part #'}
-                                    </div>
-                                    
-                                    {/* Stats Grid */}
-                                    <div className="grid grid-cols-3 gap-0.5 p-1 flex-1">
-                                      <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded">
-                                        <span className="text-[8px] text-gray-400">Today</span>
-                                        <span className="font-mono font-bold text-[11px] text-orange-400">{calculation.partsPerDay}</span>
-                                      </div>
-                                      <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded">
-                                        <span className="text-[8px] text-gray-400">Complete</span>
-                                        <span className="font-mono font-bold text-[11px] text-gray-200">{calculatePartsCompletedByDay(job, date)}</span>
-                                      </div>
-                                      <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded">
-                                        <span className="text-[8px] text-gray-400">Total</span>
-                                        <span className="font-mono font-bold text-[11px] text-gray-200">{calculation.totalQuantity}</span>
-                                      </div>
-                                    </div>
+                          {/* Inner container for horizontal job layout */}
+                          {(() => {
+                            const jobsForDay = machine.jobs.filter(job => isJobScheduledForDay(job, date));
+                            const numJobsForDay = jobsForDay.length;
+                            
+                            // If no jobs, return null or placeholder
+                            if (numJobsForDay === 0) return null; 
 
-                                    {/* Operator */}
-                                    <div className="px-1.5 py-0.5 border-t border-gray-700 border-opacity-20">
-                                      <div className="flex items-center gap-1.5 text-[9px]">
-                                        <span className="text-gray-400 shrink-0">Operator:</span>
-                                        <span className="font-mono text-gray-200 bg-black bg-opacity-40 px-1.5 rounded w-full text-center">
-                                          {job.operator || 'Unassigned'}
-                                        </span>
+                            return (
+                              <div className="flex h-full w-full gap-1 overflow-hidden p-1"> {/* Inner flex container */}
+                                {jobsForDay.map(job => {
+                                  const calculation = calculatePartsForDay(job, date, shopSettings);
+                                  // Pass shopSettings here for accurate "Done" calculation
+                                  const completedSoFar = calculatePartsCompletedByDay(job, date, shopSettings);
+                                  return (
+                                    <div 
+                                      key={job.id}
+                                      className={`flex-1 h-full rounded-md border border-opacity-20 bg-opacity-90 ${getStatusColor(job.status).className} overflow-hidden`}
+                                      style={{
+                                        ...getStatusColor(job.status).style,
+                                        backgroundColor: `${getStatusColor(job.status).style.backgroundColor}22`,
+                                        borderColor: getStatusColor(job.status).style.backgroundColor
+                                      }}
+                                      draggable
+                                      onDragStart={() => handleDragStart(job, machine.id)}
+                                    >
+                                      <div className="h-full flex flex-col">
+                                        {/* Part Number Header - with truncation */}
+                                        <div className="h-[18px] font-mono text-[9px] font-bold text-orange-400 border-b border-orange-400 border-opacity-20 px-1.5 flex items-center whitespace-nowrap overflow-hidden text-ellipsis">
+                                          <Link to={`/po/${job.id}`} className="block w-full" title={job.partNumber || 'No Part #'}>
+                                            {job.partNumber || 'No Part #'}
+                                          </Link>
+                                        </div>
+
+                                        {/* Main content area */}
+                                        <div className="flex-1 flex flex-col justify-between p-1.5 gap-1.5">
+                                          {/* Stats Grid */}
+                                          <Link to={`/po/${job.id}`} className="block">
+                                            <div className="h-[24px] grid grid-cols-3 gap-1">
+                                              <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded min-w-0" title={`Parts to complete today: ${calculation.partsPerDay}`}>
+                                                <span className="text-[7px] text-gray-400 whitespace-nowrap">Today</span>
+                                                <span className="font-mono font-bold text-[9px] text-orange-400 whitespace-nowrap overflow-hidden text-ellipsis w-full text-center px-0.5">{calculation.partsPerDay}</span>
+                                              </div>
+                                              <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded min-w-0" title={`Parts completed: ${completedSoFar}`}>
+                                                <span className="text-[7px] text-gray-400 whitespace-nowrap">Done</span>
+                                                <span className="font-mono font-bold text-[9px] text-gray-200 whitespace-nowrap overflow-hidden text-ellipsis w-full text-center px-0.5">{completedSoFar}</span>
+                                              </div>
+                                              <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded min-w-0" title={`Total parts required: ${calculation.totalQuantity}`}>
+                                                <span className="text-[7px] text-gray-400 whitespace-nowrap">Total</span>
+                                                <span className="font-mono font-bold text-[9px] text-gray-200 whitespace-nowrap overflow-hidden text-ellipsis w-full text-center px-0.5">{calculation.totalQuantity}</span>
+                                              </div>
+                                            </div>
+                                          </Link>
+
+                                          {/* Operator Dropdown */}
+                                          <div className="h-[20px]">
+                                            <select 
+                                              value={job.operator_id || ''}
+                                              onChange={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                const newOperatorId = e.target.value;
+                                                handleOperatorChange(job.id, newOperatorId);
+                                              }}
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                              }}
+                                              className={`w-full h-full bg-black bg-opacity-40 text-[9px] font-mono rounded px-1 border-none focus:ring-0 cursor-pointer truncate ${
+                                                job.operator_id ? 'text-orange-400 font-bold' : 'text-gray-400'
+                                              }`}
+                                              title="Select operator"
+                                            >
+                                              <option value="" className="text-gray-500">--OP--</option>
+                                              {shopSettings?.operators?.map(op => (
+                                                <option 
+                                                  key={op.id} 
+                                                  value={op.id} 
+                                                  className="cursor-pointer text-gray-200 truncate"
+                                                >
+                                                  {op.name}
+                                                </option>
+                                              ))}
+                                              <option value="UNASSIGN" className="text-red-400">-- Unassign --</option> 
+                                            </select>
+                                          </div>
+
+                                          {/* Due Date */}
+                                          {job.dueDate && (
+                                            <Link to={`/po/${job.id}`} className="block">
+                                              <div className="h-[16px] text-[8px] text-gray-400 border-t border-orange-400 border-opacity-20 whitespace-nowrap overflow-hidden text-ellipsis flex items-center">
+                                                Due: {new Date(job.dueDate).toLocaleDateString()}
+                                              </div>
+                                            </Link>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                  </Link>
-                                </div>
-                              );
-                            })}
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
@@ -1193,18 +1306,18 @@ Raw job data:
                 }, 'unscheduled')}
               >
                 <Link to={`/po/${po.id}`} className="block p-3">
-                  <div className="font-mono text-sm font-bold text-orange-400 border-b border-orange-400 border-opacity-20 pb-1.5 mb-2">
+                  <div className="font-mono text-sm font-bold text-orange-400 border-b border-orange-400 border-opacity-20 pb-1.5 mb-2" title={po.part_number || po.po_number}>
                     {po.part_number || po.po_number}
                   </div>
-                  <div className="text-sm text-gray-300 mb-2">{po.customer || po.customer_name}</div>
+                  <div className="text-sm text-gray-300 mb-2" title={po.customer || po.customer_name}>{po.customer || po.customer_name}</div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded p-1">
+                    <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded p-1" title={po.due_date ? new Date(po.due_date).toLocaleDateString() : 'No due date set'}>
                       <span className="text-[8px] text-gray-400">Due Date</span>
                       <span className="font-mono font-bold text-[11px] text-gray-200">
                         {po.due_date ? new Date(po.due_date).toLocaleDateString() : 'N/A'}
                       </span>
                     </div>
-                    <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded p-1">
+                    <div className="flex flex-col items-center justify-center bg-black bg-opacity-40 rounded p-1" title={`Quantity: ${po.quantity || 1}`}>
                       <span className="text-[8px] text-gray-400">Quantity</span>
                       <span className="font-mono font-bold text-[11px] text-gray-200">
                         {po.quantity || 1}

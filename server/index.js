@@ -81,75 +81,21 @@ function initDb() {
       scheduled_start_date TEXT,
       scheduled_end_date TEXT,
       quantity INTEGER DEFAULT 1,
+      operator_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `, (err) => {
     if (err) {
-      console.error('Error initializing database:', err);
+      console.error('Error creating purchase_orders table:', err);
     } else {
-      console.log('Database tables initialized');
-      
-      // Check if we need to add the quantity column to purchase_orders table
-      db.get("PRAGMA table_info(purchase_orders)", (err, rows) => {
-        if (!err) {
-          // Check if quantity column exists
-          let hasQuantityColumn = false;
-          if (Array.isArray(rows)) {
-            hasQuantityColumn = rows.some(row => row.name === 'quantity');
-          }
-          
-          if (!hasQuantityColumn) {
-            // Add quantity column if it doesn't exist
-            db.run("ALTER TABLE purchase_orders ADD COLUMN quantity INTEGER DEFAULT 1", (err) => {
-              if (err) {
-                console.log('Error adding quantity column:', err.message);
-              } else {
-                console.log('Added quantity column to purchase_orders table');
-                
-                // Update existing records
-                db.run("UPDATE purchase_orders SET quantity = 1 WHERE quantity IS NULL", (err) => {
-                  if (err) {
-                    console.error('Error updating existing records:', err);
-                  } else {
-                    console.log('Updated existing records with default quantity');
-                  }
-                });
-              }
-            });
-          }
-        }
-      });
-      
-      // Insert default shop settings if none exist
-      db.get('SELECT COUNT(*) as count FROM shop_settings', (err, row) => {
-        if (err) {
-          console.error('Error checking shop settings:', err);
-          return;
-        }
-        
-        if (row.count === 0) {
-          db.run(`
-            INSERT INTO shop_settings (hours_per_day, operating_days, operating_hours, machines, machine_types)
-            VALUES (8, 
-              '{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":false,"sunday":false}',
-              '{"monday":8,"tuesday":8,"wednesday":8,"thursday":8,"friday":8,"saturday":8,"sunday":8}',
-              '[]',
-              '["3 Axis Mill","4th Axis Mill","Lathe","Outside Vendor"]'
-            )
-          `, err => {
-            if (err) {
-              console.error('Error inserting default shop settings:', err);
-            } else {
-              console.log('Default shop settings created');
-            }
-          });
-        }
-      });
+      console.log('Purchase Orders table checked/created.');
+      // Check columns after table is potentially created/verified
+      checkAndAddColumns();
     }
   });
   
-  // Create po_items table with new revision field
+  // Create po_items table
   db.run(`
     CREATE TABLE IF NOT EXISTS po_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,62 +107,41 @@ function initDb() {
       unit_price REAL,
       line_total REAL,
       status TEXT DEFAULT 'pending',
-      FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
+      FOREIGN KEY (po_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
     )
-  `);
+  `, (err) => {
+    if (err) console.error('Error creating po_items table:', err);
+    else console.log('PO Items table checked/created.');
+  });
   
-  // Create shop_settings table for shop configuration
+  // Create shop_settings table
   db.run(`
     CREATE TABLE IF NOT EXISTS shop_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       hours_per_day INTEGER DEFAULT 8,
       operating_days TEXT DEFAULT '{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":false,"sunday":false}',
-      operating_hours TEXT DEFAULT '{"monday":8,"tuesday":8,"wednesday":8,"thursday":8,"friday":8,"saturday":8,"sunday":8}',
+      operating_hours TEXT DEFAULT '{"monday_start":9,"monday_end":17,"tuesday_start":9,"tuesday_end":17,"wednesday_start":9,"wednesday_end":17,"thursday_start":9,"thursday_end":17,"friday_start":9,"friday_end":17,"saturday_start":9,"saturday_end":17,"sunday_start":9,"sunday_end":17}',
       machines TEXT DEFAULT '[]',
       machine_types TEXT DEFAULT '["3 Axis Mill","4th Axis Mill","Lathe","Outside Vendor"]',
       statuses TEXT DEFAULT '[]',
+      operators TEXT DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `, (err) => {
     if (err) {
-      console.error('Error initializing database:', err);
+      console.error('Error creating shop_settings table:', err);
     } else {
-      console.log('Database tables initialized');
-      
-      // Insert default shop settings if none exist
-      db.get('SELECT COUNT(*) as count FROM shop_settings', (err, row) => {
-        if (err) {
-          console.error('Error checking shop settings:', err);
-          return;
-        }
-        
-        if (row.count === 0) {
-          db.run(`
-            INSERT INTO shop_settings (hours_per_day, operating_days, operating_hours, machines, machine_types)
-            VALUES (8, 
-              '{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":false,"sunday":false}',
-              '{"monday":8,"tuesday":8,"wednesday":8,"thursday":8,"friday":8,"saturday":8,"sunday":8}',
-              '[]',
-              '["3 Axis Mill","4th Axis Mill","Lathe","Outside Vendor"]'
-            )
-          `, err => {
-            if (err) {
-              console.error('Error inserting default shop settings:', err);
-            } else {
-              console.log('Default shop settings created');
-            }
-          });
-        }
-      });
+      console.log('Shop Settings table checked/created.');
+      checkAndInsertDefaultSettings();
     }
   });
   
-  // Create parts table for parts library
+  // Create parts table
   db.run(`
     CREATE TABLE IF NOT EXISTS parts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      part_number TEXT NOT NULL,
+      part_number TEXT NOT NULL UNIQUE,
       revision TEXT,
       description TEXT,
       material_type TEXT,
@@ -229,13 +154,69 @@ function initDb() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `, (err) => {
+    if (err) console.error('Error creating parts table:', err);
+    else console.log('Parts table checked/created.');
+  });
+}
+
+// Function to check and add missing columns (idempotent)
+function checkAndAddColumns() {
+  const columnsToAdd = [
+    { table: 'purchase_orders', column: 'quantity', definition: 'INTEGER DEFAULT 1' },
+    { table: 'purchase_orders', column: 'operator_id', definition: 'TEXT' },
+    { table: 'shop_settings', column: 'operators', definition: 'TEXT DEFAULT \'[]\'' },
+  ];
+
+  columnsToAdd.forEach(colInfo => {
+    db.all(`PRAGMA table_info(${colInfo.table})`, (err, rows) => {
+      if (err) {
+        console.error(`Error getting table info for ${colInfo.table}:`, err);
+        return;
+      }
+      const columnExists = rows.some(row => row.name === colInfo.column);
+      if (!columnExists) {
+        db.run(`ALTER TABLE ${colInfo.table} ADD COLUMN ${colInfo.column} ${colInfo.definition}`, (err) => {
+          if (err) {
+            console.error(`Error adding column ${colInfo.column} to ${colInfo.table}:`, err);
+          } else {
+            console.log(`Added column ${colInfo.column} to ${colInfo.table}`);
+            // Specific post-add logic if needed, e.g., updating NULL values
+            if (colInfo.table === 'purchase_orders' && colInfo.column === 'quantity') {
+              db.run("UPDATE purchase_orders SET quantity = 1 WHERE quantity IS NULL");
+            }
+          }
+        });
+      }
+    });
+  });
+}
+
+// Function to check and insert default settings if none exist
+function checkAndInsertDefaultSettings() {
+    db.get('SELECT COUNT(*) as count FROM shop_settings', (err, row) => {
     if (err) {
-      console.error('Error initializing database:', err);
-    } else {
-      console.log('Database tables initialized');
-      
-      // Insert default shop settings if none exist
-      // ... existing code for shop settings ...
+      console.error('Error checking shop settings:', err);
+      return;
+    }
+
+    if (row.count === 0) {
+      db.run(`
+        INSERT INTO shop_settings (hours_per_day, operating_days, operating_hours, machines, machine_types, statuses, operators)
+        VALUES (8,
+          '{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":false,"sunday":false}',
+          '{"monday_start":9,"monday_end":17,"tuesday_start":9,"tuesday_end":17,"wednesday_start":9,"wednesday_end":17,"thursday_start":9,"thursday_end":17,"friday_start":9,"friday_end":17,"saturday_start":9,"saturday_end":17,"sunday_start":9,"sunday_end":17}',
+          '[]',
+          '["3 Axis Mill","4th Axis Mill","Lathe","Outside Vendor"]',
+          '[{"name":"Pending","color":"#808080"},{"name":"In Progress","color":"#FFA500"},{"name":"Completed","color":"#008000"},{"name":"On Hold","color":"#FFFF00"}]',
+          '[]'
+        )
+      `, err => {
+        if (err) {
+          console.error('Error inserting default shop settings:', err);
+        } else {
+          console.log('Default shop settings created');
+        }
+      });
     }
   });
 }
@@ -415,70 +396,62 @@ app.get('/api/purchase-orders', (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch purchase orders' });
       }
 
-      console.log('Raw PO data from database:', rows);
+      // console.log('Raw PO data from database:', rows); // Log raw data if needed
 
       // For each PO, try to fetch the associated part data
       try {
         const enrichedRows = await Promise.all(rows.map(async (po) => {
-          // Calculate total time required
-          let totalTimeRequired = 15.25; // Default to 15.25 hours as specified
-          
+          // Initialize part_data
+          let partData = null;
+
           // If the PO has a part number, try to get the part data
           if (po.part_number) {
-            return new Promise((resolve) => {
+            partData = await new Promise((resolve) => {
               db.get(
-                'SELECT * FROM parts WHERE part_number = ? AND (revision = ? OR revision IS NULL)', 
-                [po.part_number, po.revision || ''],
+                'SELECT * FROM parts WHERE part_number = ? AND (revision = ? OR revision IS NULL OR ? IS NULL)', // Match revision or if PO revision is null
+                [po.part_number, po.revision, po.revision],
                 (err, part) => {
-                  console.log('Part data for PO:', po.po_number, 'Part:', part);
-                  
                   if (err || !part) {
-                    // If part not found, use default time
-                    console.log('Using default time for PO:', po.po_number);
-                    resolve({
-                      ...po,
-                      total_time_required: totalTimeRequired,
-                      part_data: null
-                    });
+                    if (err) console.error(`Error fetching part ${po.part_number} rev ${po.revision}:`, err);
+                    resolve(null); // Resolve with null if error or not found
                   } else {
-                    // Calculate time from part data
-                    const setupTime = parseFloat(part.setup_time) || 0;
-                    const cycleTime = parseFloat(part.cycle_time) || 0;
-                    const quantity = parseInt(po.quantity) || 1;
-                    totalTimeRequired = setupTime + (cycleTime * quantity);
-                    
-                    console.log('Calculated time for PO:', po.po_number, {
-                      setupTime,
-                      cycleTime,
-                      quantity,
-                      totalTimeRequired
-                    });
-                    
-                    resolve({
-                      ...po,
-                      total_time_required: totalTimeRequired,
-                      part_data: {
-                        setup_time: setupTime,
-                        cycle_time: cycleTime,
-                        machine: part.machine
-                      }
+                    resolve({ // Resolve with part data
+                      setup_time: parseFloat(part.setup_time) || 0,
+                      cycle_time: parseFloat(part.cycle_time) || 0,
+                      machine: part.machine
                     });
                   }
                 }
               );
             });
-          } else {
-            // No part number, use default time
-            console.log('No part number for PO:', po.po_number, 'using default time');
-            return {
-              ...po,
-              total_time_required: totalTimeRequired,
-              part_data: null
-            };
           }
+
+          // Calculate total time required using part data if available, otherwise use default logic
+          let totalTimeRequired = 0; // Default to 0, calculation happens below
+          if (partData) {
+              const setupTime = partData.setup_time;
+              const cycleTime = partData.cycle_time;
+              const quantity = parseInt(po.quantity) || 1;
+              totalTimeRequired = setupTime + (cycleTime * quantity);
+          } else {
+              // Define default calculation logic if part data is missing
+              // Example: Default setup 0.25hr, default cycle 0.5hr
+              const defaultSetup = 0.25;
+              const defaultCycle = 0.5;
+              const quantity = parseInt(po.quantity) || 1;
+              totalTimeRequired = defaultSetup + (defaultCycle * quantity);
+          }
+
+
+          // Return the PO object with added part_data and total_time_required
+          return {
+            ...po,
+            total_time_required: totalTimeRequired,
+            part_data: partData // Include fetched part data (or null)
+          };
         }));
 
-        console.log('Sending enriched PO data:', enrichedRows);
+        // console.log('Sending enriched PO data:', enrichedRows); // Log enriched data if needed
         res.json(enrichedRows);
       } catch (error) {
         console.error('Error enriching purchase orders:', error);
@@ -602,77 +575,124 @@ app.put('/api/purchase-orders/:id', (req, res) => {
 // Update PO scheduling information
 app.patch('/api/purchase-orders/:id', (req, res) => {
   const { id } = req.params;
-  const { machine, scheduled_start_date, scheduled_end_date, status } = req.body;
-  
-  // If status is provided, validate it against shop settings
+  const { machine, scheduled_start_date, scheduled_end_date, status, operator_id } = req.body;
+
+  console.log('PATCH request received:', {
+    id,
+    body: req.body,
+    operator_id: operator_id
+  });
+
+  // Validate status if provided
   if (status) {
     db.get('SELECT statuses FROM shop_settings ORDER BY id DESC LIMIT 1', [], (err, settings) => {
       if (err) {
-        console.error('Error fetching shop settings:', err);
+        console.error('Error fetching shop settings for status validation:', err);
         return res.status(500).json({ error: 'Failed to validate status' });
+      }
+
+      if (!settings || !settings.statuses) {
+         console.error('Statuses not found in settings');
+         return res.status(500).json({ error: 'Shop status settings not configured' });
       }
 
       let validStatuses = [];
       try {
         validStatuses = JSON.parse(settings.statuses || '[]');
+        if (!Array.isArray(validStatuses)) throw new Error('Statuses is not an array');
       } catch (e) {
-        console.error('Error parsing statuses:', e);
-        return res.status(500).json({ error: 'Failed to validate status' });
+        console.error('Error parsing statuses from settings:', e);
+        return res.status(500).json({ error: 'Failed to parse status settings' });
       }
 
-      // Check if the status is valid
-      const isValidStatus = validStatuses.some(s => s.name.toLowerCase() === status.toLowerCase());
+      const isValidStatus = validStatuses.some(s => s && typeof s.name === 'string' && s.name.toLowerCase() === status.toLowerCase());
       if (!isValidStatus) {
-        console.error('Invalid status:', status);
-        console.error('Available statuses:', validStatuses);
-        return res.status(400).json({ error: 'Invalid status' });
+        console.error('Invalid status received:', status);
+        console.error('Available statuses:', validStatuses.map(s => s.name));
+        return res.status(400).json({ error: `Invalid status: ${status}` });
       }
 
-      // Update the purchase order with the validated status
-      updatePurchaseOrder();
+      // Status is valid, proceed to update
+      performUpdate();
     });
   } else {
-    // If no status update, proceed with other updates
-    updatePurchaseOrder();
+    // No status update requested, proceed directly
+    performUpdate();
   }
 
-  function updatePurchaseOrder() {
+  function performUpdate() {
     const updateFields = [];
     const updateValues = [];
 
-    if (machine !== undefined) {
+    // Use hasOwnProperty to check if the key exists in the request body,
+    // allowing null values to be set explicitly.
+    if (req.body.hasOwnProperty('machine')) {
       updateFields.push('machine = ?');
-      updateValues.push(machine || null);
+      updateValues.push(machine === 'unassigned' ? null : machine); // Handle 'unassigned' machine
     }
-    if (scheduled_start_date !== undefined) {
+    if (req.body.hasOwnProperty('scheduled_start_date')) {
       updateFields.push('scheduled_start_date = ?');
-      updateValues.push(scheduled_start_date || null);
+      updateValues.push(scheduled_start_date); // Allow null
     }
-    if (scheduled_end_date !== undefined) {
+    if (req.body.hasOwnProperty('scheduled_end_date')) {
       updateFields.push('scheduled_end_date = ?');
-      updateValues.push(scheduled_end_date || null);
+      updateValues.push(scheduled_end_date); // Allow null
     }
-    if (status !== undefined) {
+    if (req.body.hasOwnProperty('status')) {
       updateFields.push('status = ?');
-      updateValues.push(status);
+      updateValues.push(status); // Already validated
+    }
+    // Add operator_id update logic
+    if (req.body.hasOwnProperty('operator_id')) {
+      updateFields.push('operator_id = ?');
+      updateValues.push(operator_id === 'UNASSIGN' ? null : operator_id);
     }
 
-    // Add the ID to the values array
+    if (updateFields.length === 0) {
+      // Nothing to update
+      return res.status(200).json({ message: 'No fields provided for update' });
+    }
+
+    // Add the ID to the values array for the WHERE clause
     updateValues.push(id);
 
     const query = `UPDATE purchase_orders SET ${updateFields.join(', ')} WHERE id = ?`;
-    
+
+    console.log('Executing PATCH query:', {
+      query,
+      values: updateValues
+    });
+
     db.run(query, updateValues, function(err) {
       if (err) {
-        console.error('Error updating PO:', err);
-        return res.status(500).json({ error: 'Failed to update purchase order' });
+        console.error('Error updating PO via PATCH:', err);
+        return res.status(500).json({ error: 'Failed to update purchase order schedule' });
       }
-      
+
       if (this.changes === 0) {
-        return res.status(404).json({ error: 'Purchase order not found' });
+        // Check if the PO actually exists
+         db.get('SELECT id FROM purchase_orders WHERE id = ?', [id], (err, row) => {
+           if (!row) {
+             return res.status(404).json({ error: 'Purchase order not found' });
+           } else {
+             // PO exists, but nothing changed (maybe same values were sent?)
+             return res.status(200).json({ message: 'Purchase order found, but no changes applied (values might be the same)' });
+           }
+         });
+      } else {
+         // Get the updated record to return
+         db.get('SELECT * FROM purchase_orders WHERE id = ?', [id], (err, updatedPO) => {
+           if (err) {
+             console.error('Error fetching updated PO:', err);
+             return res.status(200).json({ message: 'Purchase order schedule updated successfully' });
+           }
+           console.log('Updated PO:', updatedPO);
+           res.status(200).json({ 
+             message: 'Purchase order schedule updated successfully',
+             purchaseOrder: updatedPO
+           });
+         });
       }
-      
-      res.status(200).json({ message: 'Purchase order updated successfully' });
     });
   }
 });
@@ -825,86 +845,140 @@ app.get('/api/shop-settings', (req, res) => {
       console.error('Error retrieving shop settings:', err);
       return res.status(500).json({ error: 'Failed to retrieve shop settings' });
     }
-    
+
     if (!row) {
+      // If no settings exist, maybe return defaults or 404
+      // Let's insert defaults if they are missing and try again or return 404.
+      // For simplicity, returning 404 here. Ensure initDb handles default creation.
       return res.status(404).json({ error: 'No shop settings found' });
     }
-    
+
     try {
-      // Parse JSON strings to objects
-      const settings = {
-        hoursPerDay: row.hours_per_day,
-        operatingDays: JSON.parse(row.operating_days),
-        operatingHours: JSON.parse(row.operating_hours),
-        machines: JSON.parse(row.machines),
-        machineTypes: JSON.parse(row.machine_types),
-        statuses: JSON.parse(row.statuses || '[]')
+      // Parse JSON strings to objects, providing defaults if parsing fails or field is null
+      const safeParse = (jsonString, defaultValue = []) => {
+        try {
+          if (jsonString === null || jsonString === undefined) return defaultValue;
+          const parsed = JSON.parse(jsonString);
+          // Ensure specific types if needed (e.g., array for machines, statuses, operators)
+          if (defaultValue && Array.isArray(defaultValue) && !Array.isArray(parsed)) {
+              console.warn('Parsed JSON is not an array as expected, returning default:', jsonString);
+              return defaultValue;
+          }
+          // Add more specific type checks if necessary
+          return parsed;
+        } catch (e) {
+          console.error('Error parsing JSON string, returning default:', jsonString, e);
+          return defaultValue;
+        }
       };
-      
+
+      const settings = {
+        id: row.id, // Include id if needed on frontend
+        hoursPerDay: row.hours_per_day || 8,
+        operatingDays: safeParse(row.operating_days, {"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":false,"sunday":false}),
+        operatingHours: safeParse(row.operating_hours, {"monday_start":9,"monday_end":17,"tuesday_start":9,"tuesday_end":17,"wednesday_start":9,"wednesday_end":17,"thursday_start":9,"thursday_end":17,"friday_start":9,"friday_end":17,"saturday_start":9,"saturday_end":17,"sunday_start":9,"sunday_end":17}),
+        machines: safeParse(row.machines, []),
+        machineTypes: safeParse(row.machine_types, []),
+        statuses: safeParse(row.statuses, []),
+        operators: safeParse(row.operators, []) // Parse operators
+      };
+
       res.status(200).json(settings);
-    } catch (parseError) {
-      console.error('Error parsing shop settings:', parseError);
-      res.status(500).json({ error: 'Failed to parse shop settings data' });
+    } catch (parseError) { // This outer catch might be redundant with safeParse, but keep for safety
+      console.error('Unexpected error processing shop settings:', parseError);
+      res.status(500).json({ error: 'Failed to process shop settings data' });
     }
   });
 });
 
+// Update Shop Settings (now POST, previously PUT/POST logic combined)
 app.post('/api/shop-settings', (req, res) => {
   try {
-    const { hoursPerDay, operatingDays, operatingHours, machines, machineTypes, statuses } = req.body;
-    
-    // Validate required fields
-    if (hoursPerDay === undefined || !operatingDays || !operatingHours || !machines || !machineTypes) {
-      return res.status(400).json({ error: 'All fields are required' });
+    // Include operators in destructuring
+    const { hoursPerDay, operatingDays, operatingHours, machines, machineTypes, statuses, operators } = req.body;
+
+    // Log received data for debugging
+    console.log('Received shop settings update:', req.body);
+
+    // Basic validation (expand as needed)
+    if (hoursPerDay === undefined || !operatingDays || !operatingHours || !machines || !machineTypes || !statuses || !operators) {
+      console.error('Missing fields in shop settings update:', req.body);
+      return res.status(400).json({ error: 'One or more required settings fields are missing' });
     }
-    
-    const operatingDaysJSON = JSON.stringify(operatingDays);
-    const operatingHoursJSON = JSON.stringify(operatingHours);
-    const machinesJSON = JSON.stringify(machines);
-    const machineTypesJSON = JSON.stringify(machineTypes);
-    const statusesJSON = JSON.stringify(statuses || []);
-    
-    // Update settings (always update the most recent record)
+
+    // Validate data types and provide defaults if needed
+    const validatedData = {
+      hoursPerDay: typeof hoursPerDay === 'number' ? hoursPerDay : 8,
+      operatingDays: typeof operatingDays === 'object' ? operatingDays : {"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":false,"sunday":false},
+      operatingHours: typeof operatingHours === 'object' ? operatingHours : {"monday_start":9,"monday_end":17,"tuesday_start":9,"tuesday_end":17,"wednesday_start":9,"wednesday_end":17,"thursday_start":9,"thursday_end":17,"friday_start":9,"friday_end":17,"saturday_start":9,"saturday_end":17,"sunday_start":9,"sunday_end":17},
+      machines: Array.isArray(machines) ? machines : [],
+      machineTypes: Array.isArray(machineTypes) ? machineTypes : [],
+      statuses: Array.isArray(statuses) ? statuses : [],
+      operators: Array.isArray(operators) ? operators : []
+    };
+
+    // Stringify objects/arrays for database storage
+    const operatingDaysJSON = JSON.stringify(validatedData.operatingDays);
+    const operatingHoursJSON = JSON.stringify(validatedData.operatingHours);
+    const machinesJSON = JSON.stringify(validatedData.machines);
+    const machineTypesJSON = JSON.stringify(validatedData.machineTypes);
+    const statusesJSON = JSON.stringify(validatedData.statuses);
+    const operatorsJSON = JSON.stringify(validatedData.operators);
+
+    // Use INSERT OR REPLACE instead of separate INSERT/UPDATE logic
+    const query = `
+      INSERT OR REPLACE INTO shop_settings (
+        id,
+        hours_per_day,
+        operating_days,
+        operating_hours,
+        machines,
+        machine_types,
+        statuses,
+        operators,
+        created_at,
+        updated_at
+      ) VALUES (
+        (SELECT id FROM shop_settings LIMIT 1),
+        ?,
+        ?,
+        ?,
+        ?,
+        ?,
+        ?,
+        ?,
+        COALESCE((SELECT created_at FROM shop_settings LIMIT 1), CURRENT_TIMESTAMP),
+        CURRENT_TIMESTAMP
+      )`;
+
     db.run(
-      `UPDATE shop_settings 
-       SET hours_per_day = ?, 
-           operating_days = ?, 
-           operating_hours = ?,
-           machines = ?,
-           machine_types = ?,
-           statuses = ?,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = (SELECT id FROM shop_settings ORDER BY id DESC LIMIT 1)`,
-      [hoursPerDay, operatingDaysJSON, operatingHoursJSON, machinesJSON, machineTypesJSON, statusesJSON],
+      query,
+      [
+        validatedData.hoursPerDay,
+        operatingDaysJSON,
+        operatingHoursJSON,
+        machinesJSON,
+        machineTypesJSON,
+        statusesJSON,
+        operatorsJSON
+      ],
       function(err) {
         if (err) {
           console.error('Error updating shop settings:', err);
-          return res.status(500).json({ error: 'Failed to update shop settings' });
+          return res.status(500).json({ error: 'Failed to update shop settings', details: err.message });
         }
-        
-        // If no records were updated, insert a new one
-        if (this.changes === 0) {
-          db.run(
-            `INSERT INTO shop_settings (hours_per_day, operating_days, operating_hours, machines, machine_types, statuses)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [hoursPerDay, operatingDaysJSON, operatingHoursJSON, machinesJSON, machineTypesJSON, statusesJSON],
-            function(err) {
-              if (err) {
-                console.error('Error creating shop settings:', err);
-                return res.status(500).json({ error: 'Failed to create shop settings' });
-              }
-              
-              res.status(201).json({ message: 'Shop settings created successfully', id: this.lastID });
-            }
-          );
-        } else {
-          res.status(200).json({ message: 'Shop settings updated successfully' });
-        }
+
+        // Log success and return updated data
+        console.log('Shop settings updated successfully');
+        res.status(200).json({
+          message: 'Shop settings updated successfully',
+          data: validatedData
+        });
       }
     );
   } catch (error) {
-    console.error('Error saving shop settings:', error);
-    res.status(500).json({ error: 'Failed to save shop settings', details: error.message });
+    console.error('Error processing shop settings POST request:', error);
+    res.status(500).json({ error: 'Server error processing shop settings', details: error.message });
   }
 });
 

@@ -2,21 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark Industrial Theme with Orange Accents */
-:root {
-  --dark-bg: #121212;
-  --dark-surface: #1e1e1e;
-  --dark-border: #333333;
-  --orange-primary: #ff6600;
-  --orange-hover: #ff8533;
-  --orange-dim: #cc5200;
-  --text-primary: #e0e0e0;
-  --text-secondary: #b0b0b0;
-  --text-dim: #707070;
-  --grid-line: rgba(255, 102, 0, 0.1);
-  --panel-bg: rgba(30, 30, 30, 0.8);
-}
-
+/* Theme-aware styles */
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -24,12 +10,13 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--dark-bg);
+  background-color: var(--bg-primary);
   color: var(--text-primary);
   background-image: 
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 20px 20px;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 code {
@@ -39,18 +26,27 @@ code {
 
 /* Simple Glow Effect */
 .glow-effect {
-  text-shadow: 0 0 8px rgba(255, 102, 0, 0.5);
+  text-shadow: 0 0 8px var(--accent-primary);
 }
 
 .card {
-  @apply bg-white rounded-lg shadow-md p-6 mb-4;
-  background-color: var(--dark-surface);
-  border: 1px solid var(--dark-border);
-  border-radius: 4px;
+  @apply rounded-lg shadow-md p-6 mb-4;
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
   padding: 1.5rem;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
   position: relative;
   overflow: hidden;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Light mode specific card styles */
+@media (prefers-color-scheme: light) {
+  .card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 
+                0 1px 3px rgba(0, 0, 0, 0.1);
+  }
 }
 
 .card::after {
@@ -60,13 +56,13 @@ code {
   left: 0;
   width: 100%;
   height: 4px;
-  background: linear-gradient(90deg, var(--orange-primary), transparent);
+  background: linear-gradient(90deg, var(--accent-primary), transparent);
 }
 
 .btn {
   @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
   padding: 0.5rem 1rem;
-  border-radius: 4px;
+  border-radius: 6px;
   font-weight: 600;
   transition: all 0.2s ease;
   text-transform: uppercase;
@@ -96,24 +92,23 @@ code {
 }
 
 .btn-primary {
-  @apply bg-blue-600 text-white hover:bg-blue-700;
-  background-color: var(--orange-primary);
-  color: var(--dark-bg);
+  @apply text-white;
+  background-color: var(--accent-primary);
+  color: var(--bg-primary);
 }
 
 .btn-primary:hover {
-  background-color: var(--orange-hover);
+  background-color: var(--accent-hover);
 }
 
 .btn-secondary {
-  @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
-  background-color: var(--dark-surface);
-  color: var(--orange-primary);
-  border: 1px solid var(--orange-primary);
+  background-color: var(--bg-secondary);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
 }
 
 .btn-secondary:hover {
-  background-color: rgba(255, 102, 0, 0.1);
+  background-color: var(--bg-tertiary);
 }
 
 .btn-danger {
@@ -122,25 +117,32 @@ code {
 
 /* Custom Input Styling */
 .input, .select {
-  background-color: #000;
-  border: 1px solid var(--orange-primary);
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
   color: var(--text-primary);
-  padding: 0.5rem 0.75rem;
-  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
   width: 100%;
   transition: all 0.2s ease;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   letter-spacing: 0.5px;
 }
 
+/* Light mode specific input styles */
+@media (prefers-color-scheme: light) {
+  .input, .select {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+}
+
 .input:focus, .select:focus {
   outline: none;
-  border-color: var(--orange-hover);
-  box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.25);
+  border-color: var(--accent-hover);
+  box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
 .input:hover, .select:hover {
-  border-color: var(--orange-hover);
+  border-color: var(--accent-hover);
 }
 
 .input::placeholder {
@@ -162,12 +164,19 @@ code {
 }
 
 .label-text {
-  color: var(--orange-primary);
+  color: var(--accent-primary);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* Light mode specific label styles */
+@media (prefers-color-scheme: light) {
+  .label-text {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
 }
 
 .form-control {
@@ -176,20 +185,20 @@ code {
 
 /* Table styling */
 table {
-  background-color: var(--dark-surface);
+  background-color: var(--card-bg);
   border-collapse: separate;
   border-spacing: 0;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
   width: 100%;
 }
 
 thead {
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: var(--bg-tertiary);
 }
 
 th {
-  color: var(--orange-primary);
+  color: var(--accent-primary);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -199,56 +208,39 @@ th {
 
 td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--dark-border);
+  border-bottom: 1px solid var(--border-color);
 }
 
 tbody tr:hover {
-  background-color: rgba(255, 102, 0, 0.05);
+  background-color: var(--bg-secondary);
 }
 
 /* Links */
 a {
-  color: var(--orange-primary);
+  color: var(--accent-primary);
   text-decoration: none;
   transition: all 0.2s ease;
 }
 
 a:hover {
-  color: var(--orange-hover);
+  color: var(--accent-hover);
   text-decoration: none;
 }
 
 /* Status badges */
-.bg-yellow-100 {
-  background-color: rgba(255, 193, 7, 0.2);
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
 }
 
-.text-yellow-800 {
-  color: #e6b800;
-}
-
-.bg-blue-100 {
-  background-color: rgba(33, 150, 243, 0.2);
-}
-
-.text-blue-800 {
-  color: #1976d2;
-}
-
-.bg-green-100 {
-  background-color: rgba(76, 175, 80, 0.2);
-}
-
-.text-green-800 {
-  color: #43a047;
-}
-
-.bg-gray-100 {
-  background-color: rgba(158, 158, 158, 0.2);
-}
-
-.text-gray-800 {
-  color: #9e9e9e;
+/* Light mode specific status badge styles */
+@media (prefers-color-scheme: light) {
+  .status-badge {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
 }
 
 /* Headings */
@@ -269,7 +261,57 @@ h1::after, h2::after {
   left: 0;
   width: 100%;
   height: 2px;
-  background: linear-gradient(90deg, var(--orange-primary), transparent);
+  background: linear-gradient(90deg, var(--accent-primary), transparent);
+}
+
+/* Message popup styling */
+.message-popup {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  transition: all 0.3s ease;
+}
+
+/* Light mode specific message popup styles */
+@media (prefers-color-scheme: light) {
+  .message-popup {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1),
+                0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.message-popup.error {
+  background-color: var(--error-bg);
+  color: var(--error-text);
+}
+
+.message-popup.success {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+}
+
+/* Theme transition */
+* {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 0.3s;
+  transition-timing-function: ease;
+}
+
+/* Light mode specific background styles */
+@media (prefers-color-scheme: light) {
+  .bg-secondary {
+    background-color: var(--bg-secondary);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* Dashboard */
+.dashboard-card {
+  border-left: 4px solid var(--accent-primary);
 }
 
 /* PDF viewer */
@@ -277,7 +319,340 @@ h1::after, h2::after {
   backdrop-filter: blur(4px);
 }
 
-/* Dashboard */
-.dashboard-card {
-  border-left: 4px solid var(--orange-primary);
-} 
+/* Settings section styling */
+.settings-section {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+/* Light mode specific settings section styles */
+@media (prefers-color-scheme: light) {
+  .settings-section {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+  }
+}
+
+/* Checkbox styling */
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.checkbox-label {
+  color: var(--text-primary);
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+/* Light mode specific checkbox styles */
+@media (prefers-color-scheme: light) {
+  .checkbox-label {
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+  
+  input[type="checkbox"] {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    border-color: var(--border-color);
+  }
+}
+
+/* Section headings */
+.section-heading {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.025em;
+}
+
+/* Light mode specific section heading styles */
+@media (prefers-color-scheme: light) {
+  .section-heading {
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+}
+
+/* Settings group */
+.settings-group {
+  padding: 1rem;
+  background-color: var(--bg-tertiary);
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+
+/* Light mode specific settings group styles */
+@media (prefers-color-scheme: light) {
+  .settings-group {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
+  }
+}
+
+/* Update existing select styles */
+.select {
+  /* ... existing code ... */
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+}
+
+/* Light mode specific select styles */
+@media (prefers-color-scheme: light) {
+  .select {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+  
+  .select:hover {
+    border-color: var(--accent-hover);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* Settings section backgrounds */
+.bg-gray-800 {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+/* Light mode specific settings section styles */
+@media (prefers-color-scheme: light) {
+  .bg-gray-800 {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Improve input contrast in settings sections */
+  .bg-gray-800 .input,
+  .bg-gray-800 .select {
+    background-color: var(--bg-primary);
+    border-color: var(--border-color);
+  }
+
+  /* Improve text contrast in settings sections */
+  .bg-gray-800 span,
+  .bg-gray-800 label,
+  .bg-gray-800 h3 {
+    color: var(--text-primary);
+  }
+
+  /* Improve toggle contrast */
+  .bg-gray-800 .toggle {
+    background-color: var(--bg-primary);
+    border-color: var(--border-color);
+  }
+}
+
+/* Dark background overrides for light mode */
+.bg-gray-700,
+.bg-gray-800,
+.bg-gray-900 {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+/* Light mode specific dark background overrides */
+@media (prefers-color-scheme: light) {
+  /* Background colors */
+  .bg-gray-700,
+  .bg-gray-800,
+  .bg-gray-900 {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Hover states */
+  .hover\:bg-gray-800:hover {
+    background-color: var(--bg-tertiary) !important;
+  }
+
+  /* Modal backgrounds */
+  div[class*="bg-gray-900"] {
+    background-color: var(--bg-primary);
+    border-color: var(--border-color);
+  }
+
+  /* Input fields in dark sections */
+  .bg-gray-700 input,
+  .bg-gray-800 input,
+  .bg-gray-900 input,
+  .bg-gray-700.input,
+  .bg-gray-800.input,
+  .bg-gray-900.input,
+  input.bg-gray-700,
+  input.bg-gray-800,
+  input.bg-gray-900 {
+    background-color: var(--bg-primary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+
+  /* Select dropdowns in dark sections */
+  .bg-gray-700 select,
+  .bg-gray-800 select,
+  .bg-gray-900 select,
+  select.bg-gray-700,
+  select.bg-gray-800,
+  select.bg-gray-900,
+  .select.bg-gray-700,
+  .select.bg-gray-800,
+  .select.bg-gray-900 {
+    background-color: var(--bg-primary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+
+  /* Table rows */
+  tr.hover\:bg-gray-800:hover {
+    background-color: var(--bg-secondary);
+  }
+
+  /* Navbar and dropdown elements */
+  .hover\:bg-gray-800:hover {
+    background-color: var(--bg-tertiary);
+  }
+
+  /* Modal dialogs */
+  div[class*="bg-gray-900"].border-red-600,
+  div[class*="bg-gray-900"].border-red-700,
+  div[class*="bg-gray-900"].border-orange-600 {
+    background-color: var(--bg-primary);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  }
+
+  /* Notification items */
+  .border-gray-800 {
+    border-color: var(--border-color);
+  }
+
+  /* Text colors in dark sections */
+  .bg-gray-700 *,
+  .bg-gray-800 *,
+  .bg-gray-900 * {
+    color: var(--text-primary);
+  }
+
+  /* Preserve text colors for specific elements */
+  .text-orange-400,
+  .text-orange-500,
+  .text-orange-600,
+  .text-red-500,
+  .text-red-600,
+  .text-red-700,
+  .btn-primary,
+  .btn-error {
+    color: inherit;
+  }
+
+  /* Border colors for specific contexts */
+  .border-gray-600,
+  .border-gray-700 {
+    border-color: var(--border-color);
+  }
+
+  /* Focus states */
+  .focus\:ring-2:focus {
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
+}
+
+/* Schedule Grid Styles */
+.bg-\[\#1a1a1a\],
+.bg-\[\#1f1f1f\] {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+/* Light mode specific schedule grid styles */
+@media (prefers-color-scheme: light) {
+  /* Grid headers and cells */
+  .bg-\[\#1a1a1a\],
+  .bg-\[\#1f1f1f\] {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Non-operating days and out-of-month days */
+  .bg-\[\#1a1a1a\].opacity-50,
+  .bg-\[\#1a1a1a\].opacity-30 {
+    background-color: var(--bg-tertiary);
+    opacity: 0.7;
+  }
+
+  /* Job cards in schedule */
+  .bg-opacity-90 {
+    background-color: var(--bg-primary) !important;
+  }
+
+  /* Stats boxes in job cards */
+  .bg-black.bg-opacity-40 {
+    background-color: var(--bg-tertiary) !important;
+    border: 1px solid var(--border-color);
+  }
+
+  /* Operator dropdown in job cards */
+  select.bg-black.bg-opacity-40 {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+  }
+
+  /* Text colors in schedule grid */
+  .text-gray-300 {
+    color: var(--text-primary) !important;
+  }
+  
+  .text-gray-400 {
+    color: var(--text-secondary) !important;
+  }
+  
+  .text-gray-600 {
+    color: var(--text-dim) !important;
+  }
+
+  /* Preserve accent colors */
+  .text-orange-400,
+  .text-orange-500,
+  .font-mono.text-orange-500 {
+    color: var(--accent-primary) !important;
+  }
+
+  /* Job card borders */
+  .border-opacity-20 {
+    border-opacity: 0.4;
+  }
+
+  /* Unscheduled jobs section */
+  .bg-\[\#1f1f1f\].rounded-md {
+    background-color: var(--bg-secondary);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Grid lines and borders */
+  .border-orange-400.border-opacity-20 {
+    border-color: var(--accent-primary);
+    border-opacity: 0.3;
+  }
+
+  /* Job card stats */
+  .font-mono.font-bold.text-gray-200 {
+    color: var(--text-primary) !important;
+  }
+
+  /* Operator dropdown options */
+  option.text-gray-200,
+  option.text-gray-500 {
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+  }
+}
+
+/* ... existing code ... */ 

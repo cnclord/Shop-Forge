@@ -1,9 +1,39 @@
-# Dependencies
+# dependencies
 /node_modules
 /client/node_modules
+/.pnp
+.pnp.js
 
-# Production
+# testing
+/coverage
+
+# production
+/build
 /client/build
+
+# misc
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
 # Environment files
 .env
@@ -18,18 +48,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # OS specific files
-.DS_Store
 Thumbs.db
-
-# Editor directories and files
-.idea
-.vscode
-*.swp
-*.swo
-
-# Database files
-*.sqlite
-*.sqlite.*
 
 # Backup files
 *.backup.*
